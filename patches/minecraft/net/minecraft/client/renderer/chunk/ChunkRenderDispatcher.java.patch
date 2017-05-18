@@ -17,3 +17,47 @@
  
          if (j > 1)
          {
+@@ -74,6 +80,8 @@
+         return this.field_188250_d.isEmpty() ? String.format("pC: %03d, single-threaded", new Object[] {Integer.valueOf(this.field_178519_d.size())}): String.format("pC: %03d, pU: %1d, aB: %1d", new Object[] {Integer.valueOf(this.field_178519_d.size()), Integer.valueOf(this.field_178524_h.size()), Integer.valueOf(this.field_178520_e.size())});
+     }
+ 
++    public boolean isSingleThreaded() {return this.field_188250_d.isEmpty();}
++
+     public boolean func_178516_a(long p_178516_1_)
+     {
+         boolean flag = false;
+@@ -92,6 +100,7 @@
+                     {
+                         this.field_178525_i.func_178474_a(chunkcompiletaskgenerator);
+                         flag1 = true;
++                        flag = true;
+                     }
+                     catch (InterruptedException var8)
+                     {
+@@ -110,7 +119,7 @@
+                 }
+             }
+ 
+-            if (p_178516_1_ == 0L || !flag1 || p_178516_1_ < System.nanoTime())
++            if (!flag1 || p_178516_1_ - System.nanoTime() < 0)
+             {
+                 break;
+             }
+@@ -121,7 +130,7 @@
+ 
+     public boolean func_178507_a(RenderChunk p_178507_1_)
+     {
+-        p_178507_1_.func_178579_c().lock();
++        if (!p_178507_1_.func_178579_c().tryLock()) return false;
+         boolean flag1;
+ 
+         try
+@@ -153,7 +162,7 @@
+ 
+     public boolean func_178505_b(RenderChunk p_178505_1_)
+     {
+-        p_178505_1_.func_178579_c().lock();
++        if (!p_178505_1_.func_178579_c().tryLock()) return false;
+         boolean flag;
+ 
+         try
