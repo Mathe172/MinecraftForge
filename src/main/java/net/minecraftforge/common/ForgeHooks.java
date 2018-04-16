@@ -109,6 +109,8 @@ import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 import net.minecraft.world.EnumDifficulty;
 import net.minecraft.world.GameType;
+import net.minecraft.world.chunk.Chunk;
+import net.minecraft.world.chunk.IChunkProvider;
 import net.minecraft.world.storage.loot.LootEntry;
 import net.minecraft.world.storage.loot.LootTable;
 import net.minecraft.world.storage.loot.LootTableManager;
@@ -1449,5 +1451,24 @@ public class ForgeHooks
             }
         }
         return modId;
+    }
+
+    public static boolean checkNeighborsLightInitialized(final Chunk chunk)
+    {
+        final IChunkProvider chunkProvider = chunk.getWorld().getChunkProvider();
+
+        for (int x = -1; x <= 1; ++x)
+            for (int z = -1; z <= 1; ++z)
+            {
+                if (x == 0 && z == 0)
+                    continue;
+
+                final Chunk neighborChunk = chunkProvider.getLoadedChunk(chunk.x + x, chunk.z + z);
+
+                if (neighborChunk == null || (!neighborChunk.isLightInitialized() && !neighborChunk.isLightPopulated()))
+                    return false;
+            }
+
+        return true;
     }
 }
