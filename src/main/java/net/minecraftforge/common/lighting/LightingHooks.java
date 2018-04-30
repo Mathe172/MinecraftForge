@@ -38,7 +38,27 @@ public class LightingHooks
     private static final AxisDirection[] ENUM_AXIS_DIRECTION_VALUES = AxisDirection.values();
 
     public static final int FLAG_COUNT = 32; //2 light types * 4 directions * 2 halves * (inwards + outwards)
-    
+
+    public static void initSkylightForSection(final World world, final Chunk chunk, final ExtendedBlockStorage section)
+    {
+        if (world.provider.hasSkyLight())
+        {
+            for (int x = 0; x < 16; ++x)
+            {
+                for (int z = 0; z < 16; ++z)
+                {
+                    if (chunk.getHeightValue(x, z) <= section.getYLocation())
+                    {
+                        for (int y = 0; y < 16; ++y)
+                        {
+                            section.setSkyLight(x, y, z, EnumSkyBlock.SKY.defaultLightValue);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     public static void relightSkylightColumn(final World world, final Chunk chunk, final int x, final int z, final int height1, final int height2)
     {
         final int yMin = Math.min(height1, height2);
@@ -57,7 +77,7 @@ public class LightingHooks
         }
 
         short emptySections = 0;
-        
+
         for (int sec = yMax >> 4; sec >= yMin >> 4; --sec)
         {
             if (sections[sec] == Chunk.NULL_BLOCK_STORAGE)
@@ -150,7 +170,7 @@ public class LightingHooks
     {
         return ((dir.getAxis() == Axis.X ? z : x) & 15) < 8 ? AxisDirection.NEGATIVE : AxisDirection.POSITIVE;
     }
-    
+
     public static void scheduleRelightChecksForChunkBoundaries(final World world, final Chunk chunk)
     {
         for (final EnumFacing dir : EnumFacing.HORIZONTALS)
@@ -193,7 +213,7 @@ public class LightingHooks
         }
 
         initNeighborLightChecks(inChunk);
-        
+
         final int inIndex = getFlagIndex(lightType, dir, axisDir, EnumBoundaryFacing.IN);
         final int outIndex = getFlagIndex(lightType, dir.getOpposite(), axisDir, EnumBoundaryFacing.OUT);
 
@@ -245,7 +265,7 @@ public class LightingHooks
         {
             nChunk.neighborLightChecks[reverseIndex] = 0; //Clear only now that it's clear that the checks are processed
         }
-        
+
         chunk.markDirty();
         nChunk.markDirty();
 
@@ -288,7 +308,7 @@ public class LightingHooks
             chunk.neighborLightChecks = new short[FLAG_COUNT];
         }
     }
-    
+
     public static final String neighborLightChecksKey = "NeighborLightChecks";
 
     public static void writeNeighborLightChecksToNBT(final Chunk chunk, final NBTTagCompound nbt)
@@ -297,7 +317,7 @@ public class LightingHooks
         {
             return;
         }
-        
+
         boolean empty = true;
         final NBTTagList list = new NBTTagList();
 
