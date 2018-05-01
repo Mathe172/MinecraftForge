@@ -9,3 +9,12 @@
          IBlockState iblockstate = this.func_177485_a(p_177484_1_, p_177484_2_, p_177484_3_);
          Block block = iblockstate.func_177230_c();
          Block block1 = p_177484_4_.func_177230_c();
+@@ -63,7 +65,7 @@
+ 
+     public boolean func_76663_a()
+     {
+-        return this.field_76682_b == 0;
++        return false;
+     }
+ 
+     public boolean func_76675_b()
