@@ -111,7 +111,7 @@
          }
  
          p_75820_3_.func_74782_a("Sections", nbttaglist);
-+        net.minecraftforge.common.lighting.LightingHooks.writeNeighborLightChecksToNBT(p_75820_1_, p_75820_3_);
++        net.minecraftforge.common.lighting.LightingHooks.writeLightData(p_75820_1_, p_75820_3_);
          p_75820_3_.func_74773_a("Biomes", p_75820_1_.func_76605_m());
          p_75820_1_.func_177409_g(false);
          NBTTagList nbttaglist1 = new NBTTagList();
@@ -156,7 +156,7 @@
          }
  
          chunk.func_76602_a(aextendedblockstorage);
-+        net.minecraftforge.common.lighting.LightingHooks.readNeighborLightChecksFromNBT(chunk, p_75823_2_);
++        net.minecraftforge.common.lighting.LightingHooks.readLightData(chunk, p_75823_2_);
  
          if (p_75823_2_.func_150297_b("Biomes", 7))
          {
