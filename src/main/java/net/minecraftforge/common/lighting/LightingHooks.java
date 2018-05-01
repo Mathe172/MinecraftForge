@@ -19,6 +19,8 @@
 
 package net.minecraftforge.common.lighting;
 
+import javax.annotation.Nullable;
+
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
 import net.minecraft.nbt.NBTTagShort;
@@ -267,6 +269,21 @@ public class LightingHooks
                     }
                 }
             }
+        }
+    }
+
+    public static void relightSkylightColumns(final World world, final Chunk chunk, @Nullable int[] oldHeightMap)
+    {
+        if (!world.provider.hasSkyLight())
+            return;
+
+        if (oldHeightMap == null)
+            return;
+
+        for (int x = 0; x < 16; ++x)
+        {
+            for (int z = 0; z < 16; ++z)
+                relightSkylightColumn(world, chunk, x, z, oldHeightMap[z << 4 | x], chunk.getHeightValue(x, z));
         }
     }
 

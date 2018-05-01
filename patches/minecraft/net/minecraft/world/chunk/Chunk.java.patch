@@ -355,9 +355,13 @@
          boolean flag = this.field_76637_e.field_73011_w.func_191066_m();
  
          for (int i = 0; i < this.field_76652_q.length; ++i)
-@@ -1176,10 +1207,16 @@
+@@ -1174,12 +1205,20 @@
+ 
+         this.field_150814_l = true;
          this.field_76646_k = true;
++        final int[] oldHeightMap = p_186033_3_ ? null : Arrays.copyOf(field_76634_f, field_76634_f.length);
          this.func_76590_a();
++        net.minecraftforge.common.lighting.LightingHooks.relightSkylightColumns(field_76637_e, this, oldHeightMap);
  
 +        List<TileEntity> invalidList = new java.util.ArrayList<TileEntity>();
 +
@@ -372,7 +376,7 @@
      }
  
      public Biome func_177411_a(BlockPos p_177411_1_, BiomeProvider p_177411_2_)
-@@ -1244,13 +1281,13 @@
+@@ -1244,13 +1283,13 @@
                      BlockPos blockpos1 = blockpos.func_177982_a(k, (j << 4) + i1, l);
                      boolean flag = i1 == 0 || i1 == 15 || k == 0 || k == 15 || l == 0 || l == 15;
  
@@ -388,7 +392,7 @@
                              {
                                  this.field_76637_e.func_175664_x(blockpos2);
                              }
-@@ -1381,7 +1418,7 @@
+@@ -1381,7 +1420,7 @@
          {
              blockpos$mutableblockpos.func_181079_c(blockpos$mutableblockpos.func_177958_n(), l, blockpos$mutableblockpos.func_177952_p());
  
@@ -397,7 +401,7 @@
              {
                  this.field_76637_e.func_175664_x(blockpos$mutableblockpos);
              }
-@@ -1489,4 +1526,34 @@
+@@ -1489,4 +1528,34 @@
          QUEUED,
          CHECK;
      }
