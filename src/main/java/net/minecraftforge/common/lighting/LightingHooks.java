@@ -28,6 +28,7 @@ import net.minecraft.util.EnumFacing;
 import net.minecraft.util.EnumFacing.Axis;
 import net.minecraft.util.EnumFacing.AxisDirection;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.BlockPos.MutableBlockPos;
 import net.minecraft.util.math.BlockPos.PooledMutableBlockPos;
 import net.minecraft.world.EnumSkyBlock;
 import net.minecraft.world.World;
@@ -122,32 +123,32 @@ public class LightingHooks
             }
         }
 
-        pos.release();
-
-        if (!world.provider.hasSkyLight())
-            return;
-
-        for (int x = 0; x < 16; ++x)
+        if (world.provider.hasSkyLight())
         {
-            for (int z = 0; z < 16; ++z)
+            for (int x = 0; x < 16; ++x)
             {
-                final int yMax = chunk.getHeightValue(x, z);
-                int yMin = Math.max(yMax - 1, 0);
-
-                for (final EnumFacing dir : EnumFacing.HORIZONTALS)
+                for (int z = 0; z < 16; ++z)
                 {
-                    final int nX = x + dir.getFrontOffsetX();
-                    final int nZ = z + dir.getFrontOffsetZ();
+                    final int yMax = chunk.getHeightValue(x, z);
+                    int yMin = Math.max(yMax - 1, 0);
 
-                    if (((nX | nZ) & CHUNK_COORD_OVERFLOW_MASK) != 0)
-                        continue;
+                    for (final EnumFacing dir : EnumFacing.HORIZONTALS)
+                    {
+                        final int nX = x + dir.getFrontOffsetX();
+                        final int nZ = z + dir.getFrontOffsetZ();
 
-                    yMin = Math.min(yMin, chunk.getHeightValue(nX, nZ));
+                        if (((nX | nZ) & CHUNK_COORD_OVERFLOW_MASK) != 0)
+                            continue;
+
+                        yMin = Math.min(yMin, chunk.getHeightValue(nX, nZ));
+                    }
+
+                    scheduleRelightChecksForColumn(world, EnumSkyBlock.SKY, xBase + x, zBase + z, yMin, yMax - 1, pos);
                 }
-
-                scheduleRelightChecksForColumn(world, EnumSkyBlock.SKY, xBase + x, zBase + z, yMin, yMax - 1);
             }
         }
+
+        pos.release();
     }
 
     private static void initNeighborLight(final World world, final Chunk chunk, final Chunk nChunk, final EnumFacing nDir)
@@ -215,7 +216,7 @@ public class LightingHooks
                     yMax = Math.min(yMax, nChunk.getHeightValue(nX, nZ));
                 }
 
-                scheduleRelightChecksForColumn(world, EnumSkyBlock.SKY, xBase + x, zBase + z, yMin, yMax - 1);
+                scheduleRelightChecksForColumn(world, EnumSkyBlock.SKY, xBase + x, zBase + z, yMin, yMax - 1, pos);
             }
         }
 
@@ -280,14 +281,25 @@ public class LightingHooks
         if (oldHeightMap == null)
             return;
 
+        final PooledMutableBlockPos pos = PooledMutableBlockPos.retain();
+
         for (int x = 0; x < 16; ++x)
         {
             for (int z = 0; z < 16; ++z)
-                relightSkylightColumn(world, chunk, x, z, oldHeightMap[z << 4 | x], chunk.getHeightValue(x, z));
+                relightSkylightColumn(world, chunk, x, z, oldHeightMap[z << 4 | x], chunk.getHeightValue(x, z), pos);
         }
+
+        pos.release();
     }
 
     public static void relightSkylightColumn(final World world, final Chunk chunk, final int x, final int z, final int height1, final int height2)
+    {
+        final PooledMutableBlockPos pos = PooledMutableBlockPos.retain();
+        relightSkylightColumn(world, chunk, x, z, height1, height2, pos);
+        pos.release();
+    }
+
+    private static void relightSkylightColumn(final World world, final Chunk chunk, final int x, final int z, final int height1, final int height2, final MutableBlockPos pos)
     {
         final int yMin = Math.min(height1, height2);
         final int yMax = Math.max(height1, height2) - 1;
@@ -297,7 +309,7 @@ public class LightingHooks
         final int xBase = (chunk.x << 4) + x;
         final int zBase = (chunk.z << 4) + z;
 
-        scheduleRelightChecksForColumn(world, EnumSkyBlock.SKY, xBase, zBase, yMin, yMax);
+        scheduleRelightChecksForColumn(world, EnumSkyBlock.SKY, xBase, zBase, yMin, yMax, pos);
 
         if (sections[yMin >> 4] == Chunk.NULL_BLOCK_STORAGE && yMin > 0)
         {
@@ -331,7 +343,7 @@ public class LightingHooks
                     {
                         if ((emptySections & (1 << sec)) != 0)
                         {
-                            scheduleRelightChecksForColumn(world, EnumSkyBlock.SKY, xBase + xOffset, zBase + zOffset, sec << 4, (sec << 4) + 15);
+                            scheduleRelightChecksForColumn(world, EnumSkyBlock.SKY, xBase + xOffset, zBase + zOffset, sec << 4, (sec << 4) + 15, pos);
                         }
                     }
                 }
@@ -343,22 +355,22 @@ public class LightingHooks
         }
     }
 
-    public static void scheduleRelightChecksForArea(final World world, final EnumSkyBlock lightType, final int xMin, final int yMin, final int zMin, final int xMax, final int yMax, final int zMax)
+    public static void scheduleRelightChecksForArea(final World world, final EnumSkyBlock lightType, final int xMin, final int yMin, final int zMin, final int xMax, final int yMax, final int zMax, final MutableBlockPos pos)
     {
         for (int x = xMin; x <= xMax; ++x)
         {
             for (int z = zMin; z <= zMax; ++z)
             {
-                scheduleRelightChecksForColumn(world, lightType, x, z, yMin, yMax);
+                scheduleRelightChecksForColumn(world, lightType, x, z, yMin, yMax, pos);
             }
         }
     }
 
-    private static void scheduleRelightChecksForColumn(final World world, final EnumSkyBlock lightType, final int x, final int z, final int yMin, final int yMax)
+    private static void scheduleRelightChecksForColumn(final World world, final EnumSkyBlock lightType, final int x, final int z, final int yMin, final int yMax, final MutableBlockPos pos)
     {
         for (int y = yMin; y <= yMax; ++y)
         {
-            world.checkLightFor(lightType, new BlockPos(x, y, z));
+            world.checkLightFor(lightType, pos.setPos(x, y, z));
         }
     }
 
@@ -401,6 +413,8 @@ public class LightingHooks
 
     public static void scheduleRelightChecksForChunkBoundaries(final World world, final Chunk chunk)
     {
+        final PooledMutableBlockPos pos = PooledMutableBlockPos.retain();
+
         for (final EnumFacing dir : EnumFacing.HORIZONTALS)
         {
             final int xOffset = dir.getFrontOffsetX();
@@ -424,13 +438,15 @@ public class LightingHooks
                     //Check everything that might have been canceled due to this chunk not being loaded.
                     //Also, pass in chunks if already known
                     //The boundary to the neighbor chunk (both ways)
-                    scheduleRelightChecksForBoundary(world, chunk, nChunk, null, lightType, xOffset, zOffset, axisDir);
-                    scheduleRelightChecksForBoundary(world, nChunk, chunk, null, lightType, -xOffset, -zOffset, axisDir);
+                    scheduleRelightChecksForBoundary(world, chunk, nChunk, null, lightType, xOffset, zOffset, axisDir, pos);
+                    scheduleRelightChecksForBoundary(world, nChunk, chunk, null, lightType, -xOffset, -zOffset, axisDir, pos);
                     //The boundary to the diagonal neighbor (since the checks in that chunk were aborted if this chunk wasn't loaded, see scheduleRelightChecksForBoundary)
-                    scheduleRelightChecksForBoundary(world, nChunk, null, chunk, lightType, (zOffset != 0 ? axisDir.getOffset() : 0), (xOffset != 0 ? axisDir.getOffset() : 0), dir.getAxisDirection() == AxisDirection.POSITIVE ? AxisDirection.NEGATIVE : AxisDirection.POSITIVE);
+                    scheduleRelightChecksForBoundary(world, nChunk, null, chunk, lightType, (zOffset != 0 ? axisDir.getOffset() : 0), (xOffset != 0 ? axisDir.getOffset() : 0), dir.getAxisDirection() == AxisDirection.POSITIVE ? AxisDirection.NEGATIVE : AxisDirection.POSITIVE, pos);
                 }
             }
         }
+
+        pos.release();
     }
 
     private static void mergeFlags(final EnumSkyBlock lightType, final Chunk inChunk, final Chunk outChunk, final EnumFacing dir, final AxisDirection axisDir)
@@ -449,7 +465,7 @@ public class LightingHooks
         //no need to call Chunk.setModified() since checks are not deleted from outChunk
     }
 
-    private static void scheduleRelightChecksForBoundary(final World world, final Chunk chunk, Chunk nChunk, Chunk sChunk, final EnumSkyBlock lightType, final int xOffset, final int zOffset, final AxisDirection axisDir)
+    private static void scheduleRelightChecksForBoundary(final World world, final Chunk chunk, Chunk nChunk, Chunk sChunk, final EnumSkyBlock lightType, final int xOffset, final int zOffset, final AxisDirection axisDir, final MutableBlockPos pos)
     {
         if (chunk.neighborLightChecks == null)
         {
@@ -524,7 +540,7 @@ public class LightingHooks
         {
             if ((flags & (1 << y)) != 0)
             {
-                scheduleRelightChecksForArea(world, lightType, xMin, y << 4, zMin, xMax, (y << 4) + 15, zMax);
+                scheduleRelightChecksForArea(world, lightType, xMin, y << 4, zMin, xMax, (y << 4) + 15, zMax, pos);
             }
         }
     }
