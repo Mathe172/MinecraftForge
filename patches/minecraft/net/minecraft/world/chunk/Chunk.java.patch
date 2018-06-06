@@ -22,7 +22,7 @@
  
                  if (this.field_76637_e.field_73011_w.func_191066_m())
                  {
-+                    net.minecraftforge.common.lighting.LightingHooks.fillSkylightColumn(this, j, k);
++                    net.minecraftforge.common.lighting.LightInitHooks.fillSkylightColumn(this, j, k);
 +                } else {
                      int k1 = 15;
                      int i1 = i + 16 - 1;

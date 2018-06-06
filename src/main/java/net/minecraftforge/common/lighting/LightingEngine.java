@@ -35,7 +35,6 @@ import net.minecraft.util.math.Vec3i;
 import net.minecraft.world.EnumSkyBlock;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.Chunk;
-import net.minecraftforge.common.lighting.LightingHooks.EnumBoundaryFacing;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 
 public class LightingEngine
@@ -291,7 +290,7 @@ public class LightingEngine
 
                         if (nChunk == null)
                         {
-                            LightingHooks.flagSecBoundaryForUpdate(this.curChunk, this.curPos, this.lightType, EnumFacing.VALUES[i], EnumBoundaryFacing.OUT);
+                            LightBoundaryCheckHooks.flagSecBoundaryForUpdate(this.curChunk, this.curPos, this.lightType, EnumFacing.VALUES[i], LightUtils.EnumBoundaryFacing.OUT);
                             continue;
                         }
 
@@ -407,7 +406,7 @@ public class LightingEngine
         {
             if (this.neighborsChunk[i] == null)
             {
-                LightingHooks.flagSecBoundaryForUpdate(this.curChunk, this.curPos, this.lightType, EnumFacing.VALUES[i], EnumBoundaryFacing.IN);
+                LightBoundaryCheckHooks.flagSecBoundaryForUpdate(this.curChunk, this.curPos, this.lightType, EnumFacing.VALUES[i], LightUtils.EnumBoundaryFacing.IN);
                 continue;
             }
 
@@ -431,7 +430,7 @@ public class LightingEngine
 
             if (nChunk == null)
             {
-                LightingHooks.flagSecBoundaryForUpdate(this.curChunk, this.curPos, this.lightType, EnumFacing.VALUES[i], EnumBoundaryFacing.OUT);
+                LightBoundaryCheckHooks.flagSecBoundaryForUpdate(this.curChunk, this.curPos, this.lightType, EnumFacing.VALUES[i], LightUtils.EnumBoundaryFacing.OUT);
                 continue;
             }
 
@@ -571,7 +570,7 @@ public class LightingEngine
     private static final int CACHED_QUEUE_SEGMENTS_COUNT = 1 << 12;
     private static final int QUEUE_SEGMENT_SIZE = 1 << 10;
 
-    private final Deque<PooledLongQueueSegment> segmentPool = new ArrayDeque<PooledLongQueueSegment>();
+    private final Deque<PooledLongQueueSegment> segmentPool = new ArrayDeque<>();
 
     private PooledLongQueueSegment getLongQueueSegment()
     {
