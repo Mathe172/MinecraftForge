@@ -3,13 +3,17 @@ package net.minecraftforge.common.lighting;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
 import net.minecraft.nbt.NBTTagShort;
+import net.minecraft.server.management.PlayerChunkMap;
+import net.minecraft.server.management.PlayerChunkMapEntry;
 import net.minecraft.util.EnumFacing;
+import net.minecraft.util.EnumFacing.Axis;
 import net.minecraft.util.EnumFacing.AxisDirection;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.BlockPos.MutableBlockPos;
 import net.minecraft.util.math.BlockPos.PooledMutableBlockPos;
 import net.minecraft.world.EnumSkyBlock;
 import net.minecraft.world.World;
+import net.minecraft.world.WorldServer;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraftforge.common.lighting.LightUtils.EnumBoundaryFacing;
 import net.minecraftforge.fml.common.FMLLog;
@@ -29,6 +33,11 @@ public class LightBoundaryCheckHooks
         initNeighborLightChecks(chunk);
         chunk.neighborLightChecks[getFlagIndex(lightType, dir, axisDirection, boundaryFacing)] |= sectionMask;
         chunk.markDirty();
+    }
+
+    private static EnumFacing getDiagonalDir(final EnumFacing dir, final AxisDirection axisDir)
+    {
+        return LightUtils.getDirFromAxis(dir.getAxis() == Axis.X ? Axis.Z : Axis.X, axisDir);
     }
 
     public static void scheduleRelightChecksForChunkBoundaries(final World world, final Chunk chunk)
@@ -58,10 +67,23 @@ public class LightBoundaryCheckHooks
                     //Check everything that might have been canceled due to this chunk not being loaded.
                     //Also, pass in chunks if already known
                     //The boundary to the neighbor chunk (both ways)
-                    scheduleRelightChecksForBoundary(world, chunk, nChunk, null, lightType, xOffset, zOffset, axisDir, pos);
-                    scheduleRelightChecksForBoundary(world, nChunk, chunk, null, lightType, -xOffset, -zOffset, axisDir, pos);
+                    scheduleRelightChecksForBoundary(world, chunk, nChunk, null, lightType, xOffset, zOffset, axisDir, pos, dir);
+                    scheduleRelightChecksForBoundary(world, nChunk, chunk, null, lightType, -xOffset, -zOffset, axisDir, pos, dir.getOpposite());
+
                     //The boundary to the diagonal neighbor (since the checks in that chunk were aborted if this chunk wasn't loaded, see scheduleRelightChecksForBoundary)
-                    scheduleRelightChecksForBoundary(world, nChunk, null, chunk, lightType, (zOffset != 0 ? axisDir.getOffset() : 0), (xOffset != 0 ? axisDir.getOffset() : 0), dir.getAxisDirection() == AxisDirection.POSITIVE ? AxisDirection.NEGATIVE : AxisDirection.POSITIVE, pos);
+                    final EnumFacing diagDir = getDiagonalDir(dir, axisDir);
+                    scheduleRelightChecksForBoundary(
+                        world,
+                        nChunk,
+                        null,
+                        chunk,
+                        lightType,
+                        diagDir.getFrontOffsetX(),
+                        diagDir.getFrontOffsetZ(),
+                        dir.getAxisDirection() == AxisDirection.POSITIVE ? AxisDirection.NEGATIVE : AxisDirection.POSITIVE,
+                        pos,
+                        diagDir
+                    );
                 }
             }
         }
@@ -85,7 +107,18 @@ public class LightBoundaryCheckHooks
         //no need to call Chunk.setModified() since checks are not deleted from outChunk
     }
 
-    private static void scheduleRelightChecksForBoundary(final World world, final Chunk chunk, Chunk nChunk, Chunk sChunk, final EnumSkyBlock lightType, final int xOffset, final int zOffset, final AxisDirection axisDir, final MutableBlockPos pos)
+    private static void scheduleRelightChecksForBoundary(
+        final World world,
+        final Chunk chunk,
+        Chunk nChunk,
+        Chunk sChunk,
+        final EnumSkyBlock lightType,
+        final int xOffset,
+        final int zOffset,
+        final AxisDirection axisDir,
+        final MutableBlockPos pos,
+        EnumFacing dir
+    )
     {
         if (chunk.neighborLightChecks == null)
         {
@@ -113,7 +146,9 @@ public class LightBoundaryCheckHooks
 
         if (sChunk == null)
         {
-            sChunk = world.getChunkProvider().getLoadedChunk(chunk.x + (zOffset != 0 ? axisDir.getOffset() : 0), chunk.z + (xOffset != 0 ? axisDir.getOffset() : 0));
+            final EnumFacing diagDir = getDiagonalDir(dir, axisDir);
+
+            sChunk = world.getChunkProvider().getLoadedChunk(chunk.x + diagDir.getFrontOffsetX(), chunk.z + diagDir.getFrontOffsetZ());
 
             if (sChunk == null)
             {
@@ -162,6 +197,15 @@ public class LightBoundaryCheckHooks
             {
                 LightUtils.scheduleRelightChecksForArea(world, lightType, xMin, y << 4, zMin, xMax, (y << 4) + 15, zMax, pos);
             }
+        }
+
+        if (world instanceof WorldServer)
+        {
+            final PlayerChunkMap playerChunkMap = ((WorldServer) world).getPlayerChunkMap();
+            final PlayerChunkMapEntry playerChunk = playerChunkMap.getEntry(chunk.x, chunk.z);
+
+            if (playerChunk != null)
+                LightTrackingHooks.trackLightUpdates(playerChunk, playerChunkMap, flags, lightType, dir.getOpposite());
         }
     }
 

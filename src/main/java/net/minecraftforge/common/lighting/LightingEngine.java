@@ -21,12 +21,15 @@ package net.minecraftforge.common.lighting;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import javax.annotation.Nullable;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.profiler.Profiler;
+import net.minecraft.server.management.PlayerChunkMap;
+import net.minecraft.server.management.PlayerChunkMapEntry;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.BlockPos.MutableBlockPos;
@@ -46,6 +49,7 @@ public class LightingEngine
     private static final Logger logger = LogManager.getLogger();
 
     private final World world;
+    private @Nullable PlayerChunkMap playerChunkMap;
     private final Profiler profiler;
 
     //Layout of longs: [padding(4)] [y(8)] [x(26)] [z(26)]
@@ -90,12 +94,17 @@ public class LightingEngine
 
     private static final long[] neighborShifts = new long[6];
 
+    private static final long[] sectionBoundaryMasks = new long[6];
+    private static final long[] sectionBoundaryIdentifiers = new long[6];
+
     static
     {
         for (int i = 0; i < 6; ++i)
         {
             final Vec3i offset = EnumFacing.VALUES[i].getDirectionVec();
             neighborShifts[i] = ((long) offset.getY() << sY) | ((long) offset.getX() << sX) | ((long) offset.getZ() << sZ);
+            sectionBoundaryMasks[i] = ((long) (-(offset.getY() & 1) & 15) << sY) | ((long) (-(offset.getX() & 1) & 15) << sX) | ((long) (-(offset.getZ() & 1) & 15) << sZ);
+            sectionBoundaryIdentifiers[i] = ((long) ((offset.getY() >> 1) & 15) << sY) | ((long) ((offset.getX() >> 1) & 15) << sX) | ((long) ((offset.getZ() >> 1) & 15) << sZ);
         }
     }
 
@@ -111,6 +120,8 @@ public class LightingEngine
     private PooledLongQueue curQueue;
     private Chunk curChunk;
     private long curChunkIdentifier;
+    private PlayerChunkMapEntry curPlayerChunk;
+    private long curPlayerChunkIdentifier;
     private long curData;
 
     //Cached data about neighboring blocks (of tempPos)
@@ -144,6 +155,11 @@ public class LightingEngine
         {
             this.neighborsPos[i] = new MutableBlockPos();
         }
+    }
+
+    public void setPlayerChunkMap(final PlayerChunkMap playerChunkMap)
+    {
+        this.playerChunkMap = playerChunkMap;
     }
 
     /**
@@ -205,7 +221,6 @@ public class LightingEngine
         }
 
         this.updating = true;
-        this.curChunkIdentifier = -1; //reset chunk cache
 
         this.profiler.startSection("lighting");
 
@@ -243,7 +258,7 @@ public class LightingEngine
             if (newLight > this.curToCachedLight())
             {
                 //Sets the light to newLight to only schedule once. Clear leading bits of curData for later
-                this.enqueueBrightening(this.curPos, this.curData & mPos, newLight, this.curChunk);
+                this.enqueueBrightening(this.curPos, this.curData & mPos, newLight, this.curChunk, null);
             }
         }
 
@@ -254,7 +269,7 @@ public class LightingEngine
             if (oldLight != 0)
             {
                 //Sets the light to 0 to only schedule once
-                this.enqueueDarkening(this.curPos, this.curData, oldLight, this.curChunk);
+                this.enqueueDarkeningFromCur(oldLight);
             }
         }
 
@@ -288,9 +303,11 @@ public class LightingEngine
                     {
                         final Chunk nChunk = this.neighborsChunk[i];
 
+                        final EnumFacing dir = EnumFacing.VALUES[i];
+
                         if (nChunk == null)
                         {
-                            LightBoundaryCheckHooks.flagSecBoundaryForUpdate(this.curChunk, this.curPos, this.lightType, EnumFacing.VALUES[i], LightUtils.EnumBoundaryFacing.OUT);
+                            LightBoundaryCheckHooks.flagSecBoundaryForUpdate(this.curChunk, this.curPos, this.lightType, dir, LightUtils.EnumBoundaryFacing.OUT);
                             continue;
                         }
 
@@ -305,7 +322,7 @@ public class LightingEngine
 
                         if (curLight - this.posToOpac(nPos, posToState(nPos, nChunk)) >= nLight) //schedule neighbor for darkening if we possibly light it
                         {
-                            this.enqueueDarkening(nPos, this.neighborsLongPos[i], nLight, nChunk);
+                            this.enqueueDarkening(nPos, this.neighborsLongPos[i], nLight, nChunk, dir);
                         }
                         else //only use for new light calculation if not
                         {
@@ -344,6 +361,12 @@ public class LightingEngine
         }
 
         this.profiler.endSection();
+
+        // Reset chunk cache
+        this.curChunk = null;
+        this.curChunkIdentifier = -1;
+        this.curPlayerChunk = null;
+        this.curPlayerChunkIdentifier = -1;
 
         this.updating = false;
     }
@@ -428,9 +451,11 @@ public class LightingEngine
 
             final Chunk nChunk = this.neighborsChunk[i];
 
+            final EnumFacing dir = EnumFacing.VALUES[i];
+
             if (nChunk == null)
             {
-                LightBoundaryCheckHooks.flagSecBoundaryForUpdate(this.curChunk, this.curPos, this.lightType, EnumFacing.VALUES[i], LightUtils.EnumBoundaryFacing.OUT);
+                LightBoundaryCheckHooks.flagSecBoundaryForUpdate(this.curChunk, this.curPos, this.lightType, dir, LightUtils.EnumBoundaryFacing.OUT);
                 continue;
             }
 
@@ -438,32 +463,77 @@ public class LightingEngine
 
             if (newLight > this.neighborsLight[i])
             {
-                this.enqueueBrightening(nPos, this.neighborsLongPos[i], newLight, nChunk);
+                this.enqueueBrightening(nPos, this.neighborsLongPos[i], newLight, nChunk, dir);
             }
         }
     }
 
     private void enqueueBrighteningFromCur(final int newLight)
     {
-        this.enqueueBrightening(this.curPos, this.curData, newLight, this.curChunk);
+        this.enqueueBrightening(this.curPos, this.curData, newLight, this.curChunk, null);
     }
 
     /**
      * Enqueues the pos for brightening and sets its light value to <code>newLight</code>
      */
-    private void enqueueBrightening(final BlockPos pos, final long longPos, final int newLight, final Chunk chunk)
+    private void enqueueBrightening(
+        final BlockPos pos,
+        final long longPos,
+        final int newLight,
+        final Chunk chunk,
+        final @Nullable EnumFacing dir
+    )
     {
         this.queuedBrightenings[newLight].add(longPos);
         chunk.setLightFor(this.lightType, pos, newLight);
+
+        if (dir != null)
+            this.trackLightUpdate(pos, longPos, dir);
+    }
+
+    private void enqueueDarkeningFromCur(final int oldLight)
+    {
+        this.enqueueDarkening(this.curPos, this.curData, oldLight, this.curChunk, null);
     }
 
     /**
      * Enqueues the pos for darkening and sets its light value to 0
      */
-    private void enqueueDarkening(final BlockPos pos, final long longPos, final int oldLight, final Chunk chunk)
+    private void enqueueDarkening(
+        final BlockPos pos,
+        final long longPos,
+        final int oldLight,
+        final Chunk chunk,
+        final @Nullable EnumFacing dir
+    )
     {
         this.queuedDarkenings[oldLight].add(longPos);
         chunk.setLightFor(this.lightType, pos, 0);
+
+        if (dir != null)
+            this.trackLightUpdate(pos, longPos, dir);
+    }
+
+    private void trackLightUpdate(final BlockPos targetPos, final long longTargetPos, final EnumFacing dir)
+    {
+        if (this.playerChunkMap == null)
+            return;
+
+        final int dirIndex = dir.getIndex();
+
+        if ((longTargetPos & sectionBoundaryMasks[dirIndex]) != sectionBoundaryIdentifiers[dirIndex])
+            return;
+
+        final long chunkIdentifier = longTargetPos & mChunk;
+
+        if (this.curPlayerChunkIdentifier != chunkIdentifier)
+        {
+            this.curPlayerChunk = this.playerChunkMap.getEntry(targetPos.getX() >> 4, targetPos.getZ() >> 4);
+            this.curPlayerChunkIdentifier = chunkIdentifier;
+        }
+
+        if (this.curPlayerChunk != null)
+            LightTrackingHooks.trackLightUpdate(this.curPlayerChunk, this.playerChunkMap, targetPos.getY(), this.lightType, dir);
     }
 
     private static MutableBlockPos longToPos(final MutableBlockPos pos, final long longPos)

@@ -17,6 +17,21 @@ public class LightUtils
         return ((dir.getAxis() == Axis.X ? z : x) & 15) < 8 ? AxisDirection.NEGATIVE : AxisDirection.POSITIVE;
     }
 
+    public static EnumFacing getDirFromAxis(final Axis axis, final AxisDirection axisDir)
+    {
+        switch (axis)
+        {
+        case X:
+            return axisDir == AxisDirection.POSITIVE ? EnumFacing.EAST : EnumFacing.WEST;
+        case Z:
+            return axisDir == AxisDirection.POSITIVE ? EnumFacing.SOUTH : EnumFacing.NORTH;
+        case Y:
+            return axisDir == AxisDirection.POSITIVE ? EnumFacing.UP : EnumFacing.DOWN;
+        }
+
+        return null;
+    }
+
     public static int getIndex(final EnumSkyBlock lightType)
     {
         return lightType == EnumSkyBlock.BLOCK ? 0 : 1;

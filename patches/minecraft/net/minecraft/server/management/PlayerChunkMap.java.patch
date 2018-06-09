@@ -1,0 +1,10 @@
+--- ../src-base/minecraft/net/minecraft/server/management/PlayerChunkMap.java
++++ ../src-work/minecraft/net/minecraft/server/management/PlayerChunkMap.java
+@@ -48,6 +48,7 @@
+     private long field_111192_g;
+     private boolean field_187312_l = true;
+     private boolean field_187313_m = true;
++    public final List<PlayerChunkMapEntry> lightTrackingEntries = Lists.<PlayerChunkMapEntry>newArrayList();
+ 
+     public PlayerChunkMap(WorldServer p_i1176_1_)
+     {
