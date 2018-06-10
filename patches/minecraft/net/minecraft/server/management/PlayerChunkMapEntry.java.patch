@@ -1,6 +1,6 @@
 --- ../src-base/minecraft/net/minecraft/server/management/PlayerChunkMapEntry.java
 +++ ../src-work/minecraft/net/minecraft/server/management/PlayerChunkMapEntry.java
-@@ -32,12 +32,25 @@
+@@ -32,12 +32,26 @@
      private int field_187288_h;
      private long field_187289_i;
      private boolean field_187290_j;
@@ -17,6 +17,7 @@
 +    public long[] lightTrackingTick = new long[3];
 +    public long[] lightTrackingAdd = new long[3];
 +    public boolean lightTrackingEmpty = true;
++    public int lightTrackingSectionMask;
  
      public PlayerChunkMapEntry(PlayerChunkMap p_i1518_1_, int p_i1518_2_, int p_i1518_3_)
      {
@@ -27,7 +28,7 @@
      }
  
      public ChunkPos func_187264_a()
-@@ -63,7 +76,10 @@
+@@ -63,7 +77,10 @@
              if (this.field_187290_j)
              {
                  this.func_187278_c(p_187276_1_);
@@ -38,7 +39,7 @@
          }
      }
  
-@@ -71,6 +87,20 @@
+@@ -71,6 +88,20 @@
      {
          if (this.field_187283_c.contains(p_187277_1_))
          {
@@ -59,7 +60,7 @@
              if (this.field_187290_j)
              {
                  p_187277_1_.field_71135_a.func_147359_a(new SPacketUnloadChunk(this.field_187284_d.field_77276_a, this.field_187284_d.field_77275_b));
-@@ -78,15 +108,19 @@
+@@ -78,15 +109,19 @@
  
              this.field_187283_c.remove(p_187277_1_);
  
@@ -79,7 +80,7 @@
          if (this.field_187286_f != null)
          {
              return true;
-@@ -129,8 +163,11 @@
+@@ -129,9 +164,13 @@
  
              for (EntityPlayerMP entityplayermp : this.field_187283_c)
              {
@@ -89,9 +90,19 @@
 +                // chunk watch event - delayed to here as the chunk wasn't ready in addPlayer
 +                net.minecraftforge.common.MinecraftForge.EVENT_BUS.post(new net.minecraftforge.event.world.ChunkWatchEvent.Watch(this.field_187284_d, entityplayermp));
              }
++            net.minecraftforge.common.lighting.LightTrackingHooks.onSendChunkToPlayers(this, this.field_187282_b, this.field_187283_c);
  
              return true;
-@@ -169,7 +206,7 @@
+         }
+@@ -143,6 +182,7 @@
+         {
+             p_187278_1_.field_71135_a.func_147359_a(new SPacketChunkData(this.field_187286_f, 65535));
+             this.field_187282_b.func_72688_a().func_73039_n().func_85172_a(p_187278_1_, this.field_187286_f);
++            net.minecraftforge.common.lighting.LightTrackingHooks.onSendChunkToPlayer(p_187278_1_, this, this.field_187282_b);
+         }
+     }
+ 
+@@ -169,7 +209,7 @@
  
              this.field_187288_h |= 1 << (p_187265_2_ >> 4);
  
@@ -100,7 +111,7 @@
              {
                  short short1 = (short)(p_187265_1_ << 12 | p_187265_3_ << 8 | p_187265_2_);
  
-@@ -180,7 +217,8 @@
+@@ -180,7 +220,8 @@
                          return;
                      }
                  }
@@ -110,7 +121,7 @@
                  this.field_187285_e[this.field_187287_g++] = short1;
              }
          }
-@@ -197,6 +235,7 @@
+@@ -197,6 +238,7 @@
          }
      }
  
@@ -118,7 +129,7 @@
      public void func_187280_d()
      {
          if (this.field_187290_j && this.field_187286_f != null)
-@@ -210,28 +249,32 @@
+@@ -210,28 +252,33 @@
                      int k = (this.field_187285_e[0] >> 8 & 15) + this.field_187284_d.field_77275_b * 16;
                      BlockPos blockpos = new BlockPos(i, j, k);
                      this.func_187267_a(new SPacketBlockChange(this.field_187282_b.func_72688_a(), blockpos));
@@ -135,6 +146,7 @@
                  {
                      this.func_187267_a(new SPacketChunkData(this.field_187286_f, this.field_187288_h));
 +                    //TODO: FDix Mojang's fuckup to modded by combining all TE data into the chunk data packet... seriously... packet size explosion!
++                    net.minecraftforge.common.lighting.LightTrackingHooks.onUpdateChunk(this, this.field_187288_h);
                  }
                  else
                  {

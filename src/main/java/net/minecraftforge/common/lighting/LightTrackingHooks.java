@@ -1,15 +1,22 @@
 package net.minecraftforge.common.lighting;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Iterator;
+import java.util.List;
 
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.server.management.PlayerChunkMap;
 import net.minecraft.server.management.PlayerChunkMapEntry;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.EnumFacing.Axis;
+import net.minecraft.util.math.BlockPos.PooledMutableBlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.EnumSkyBlock;
+import net.minecraft.world.World;
+import net.minecraft.world.chunk.Chunk;
+import net.minecraftforge.common.lighting.network.NewLightPacketHandler;
+import net.minecraftforge.common.lighting.network.SPacketLightTracking;
 
 public class LightTrackingHooks
 {
@@ -50,6 +57,223 @@ public class LightTrackingHooks
         return dir.getAxis() == Axis.Y
             ? VERTICAL_OFFSET + dir.getIndex() * 30 + LightUtils.getIndex(lightType) * 15
             : (dir.getHorizontalIndex() * 32 + LightUtils.getIndex(lightType) * 16);
+    }
+
+    private static void clearIncomingTrackingData(final PlayerChunkMapEntry chunk, final int sectionMask)
+    {
+        clearTrackingData(chunk.lightTrackingTick, sectionMask);
+    }
+
+    private static void clearOutgoingTrackingData(final PlayerChunkMap chunkMap, final int sectionMask)
+    {
+        clearTrackingData(chunkMap.neighborChunksCache, sectionMask);
+    }
+
+    private static void clearTrackingData(final PlayerChunkMapEntry chunk, final PlayerChunkMap chunkMap, final int sectionMask)
+    {
+        clearIncomingTrackingData(chunk, sectionMask);
+        clearOutgoingTrackingData(chunkMap, sectionMask);
+    }
+
+    private static void clearTrackingData(final PlayerChunkMapEntry[] chunks, final int sectionMask)
+    {
+        for (int i = 0; i < 6; ++i)
+        {
+            final PlayerChunkMapEntry chunk = chunks[i];
+
+            if (chunk != null && !chunk.lightTrackingEmpty)
+                clearTrackingData(EnumFacing.VALUES[i], chunk.lightTrackingTick, sectionMask);
+        }
+    }
+
+    private static void clearTrackingData(final EntityPlayerMP player, final PlayerChunkMapEntry chunk, final int sectionMask)
+    {
+        final long[] data = chunk.lightTrackingData.get(player);
+
+        if (data == null)
+            return;
+
+        clearTrackingData(data, sectionMask);
+
+        if (chunk.lightTrackingEmpty && isTrackingTrivial(data))
+            chunk.lightTrackingData.remove(player);
+    }
+
+    private static void clearTrackingData(final long[] data, final int sectionMask)
+    {
+        for (final EnumFacing dir : EnumFacing.VALUES)
+            clearTrackingData(dir, data, sectionMask);
+    }
+
+    private static void clearTrackingData(final EnumFacing dir, final long[] data, int sectionMask)
+    {
+        final int offset = getOffset(dir);
+
+        if (dir == EnumFacing.UP)
+            sectionMask >>>= 1;
+        else if (dir == EnumFacing.DOWN)
+            sectionMask &= (1 << 15) - 1;
+
+        final int shift = dir.getAxis() == Axis.Y ? 15 : 16;
+
+        final long removeMask = (((long) sectionMask << shift) | (long) sectionMask) << (offset & 63);
+
+        data[offset >> 6] &= ~removeMask;
+    }
+
+    private static void moveTrackingData(
+        final long[] data,
+        final EnumFacing dir,
+        final EntityPlayerMP player,
+        final PlayerChunkMapEntry neighborChunk,
+        final int sectionMask
+    )
+    {
+        final long[] neighborData = neighborChunk.lightTrackingData.get(player);
+
+        if (neighborData == null)
+            copyTrackingData(dir, neighborChunk.lightTrackingTick, data, sectionMask, false);
+        else
+        {
+            copyTrackingData(dir, neighborData, data, sectionMask, true);
+
+            if (neighborChunk.lightTrackingEmpty && isTrackingTrivial(neighborData))
+                neighborChunk.lightTrackingData.remove(player);
+        }
+    }
+
+    private static void copyTrackingData(final EnumFacing dir, final long[] fromData, final long[] toData, int sectionMask, final boolean delete)
+    {
+        final int offset = getOffset(dir);
+
+        if (dir == EnumFacing.DOWN)
+            sectionMask >>>= 1;
+        else if (dir == EnumFacing.UP)
+            sectionMask &= (1 << 15) - 1;
+
+        final int shift = dir.getAxis() == Axis.Y ? 15 : 16;
+
+        final long copyMask = (((long) sectionMask << shift) | (long) sectionMask) << (offset & 63);
+
+        toData[offset >> 6] |= fromData[offset >> 6] & copyMask;
+
+        if (delete)
+            fromData[offset >> 6] &= ~copyMask;
+    }
+
+    private static long[] collectTrackingData(final EntityPlayerMP player, final int sectionMask, final PlayerChunkMap chunkMap)
+    {
+        return collectTrackingData(player, sectionMask, chunkMap.neighborChunksCache);
+    }
+
+    private static long[] collectTrackingData(final EntityPlayerMP player, final int sectionMask, final PlayerChunkMapEntry[] chunks)
+    {
+        final long[] data = new long[3];
+
+        for (int i = 0; i < 6; ++i)
+        {
+            final PlayerChunkMapEntry chunk = chunks[i];
+
+            if (chunk != null)
+                moveTrackingData(data, EnumFacing.VALUES[i], player, chunk, sectionMask);
+        }
+
+        return data;
+    }
+
+    private static void prepareNeighborChunks(final PlayerChunkMapEntry chunk, final PlayerChunkMap chunkMap)
+    {
+        final ChunkPos pos = chunk.getPos();
+
+        for (int i = 0; i < 6; ++i)
+        {
+            final EnumFacing dir = EnumFacing.VALUES[i];
+
+            final PlayerChunkMapEntry neighborChunk = dir.getAxis() == Axis.Y
+                ? chunk
+                : chunkMap.getEntry(pos.x + dir.getFrontOffsetX(), pos.z + dir.getFrontOffsetZ());
+
+            chunkMap.neighborChunksCache[i] = neighborChunk;
+
+            if (neighborChunk != null)
+                applyTrackings(neighborChunk);
+        }
+    }
+
+    public static void onSendChunkToPlayers(final PlayerChunkMapEntry chunk, final PlayerChunkMap chunkMap, final List<EntityPlayerMP> players)
+    {
+        final int sectionMask = (1 << 16) - 1;
+
+        prepareNeighborChunks(chunk, chunkMap);
+
+        for (final EntityPlayerMP player : players)
+        {
+            clearTrackingData(player, chunk, sectionMask);
+            final long[] data = collectTrackingData(player, sectionMask, chunkMap);
+
+            if (!isTrackingTrivial(data))
+                NewLightPacketHandler.INSTANCE.sendTo(new SPacketLightTracking(chunk.getPos(), data), player);
+        }
+
+        clearTrackingData(chunk, chunkMap, sectionMask);
+        Arrays.fill(chunkMap.neighborChunksCache, null);
+    }
+
+    public static void onSendChunkToPlayer(final EntityPlayerMP player, final PlayerChunkMapEntry chunk, final PlayerChunkMap chunkMap)
+    {
+        final int sectionMask = (1 << 16) - 1;
+
+        prepareNeighborChunks(chunk, chunkMap);
+
+        clearTrackingData(player, chunk, sectionMask);
+        final long[] data = collectTrackingData(player, sectionMask, chunkMap);
+
+        if (!isTrackingTrivial(data))
+            NewLightPacketHandler.INSTANCE.sendTo(new SPacketLightTracking(chunk.getPos(), data), player);
+
+        Arrays.fill(chunkMap.neighborChunksCache, null);
+    }
+
+    public static void onUpdateChunk(final PlayerChunkMapEntry chunk, final int sectionMask)
+    {
+        chunk.lightTrackingSectionMask |= sectionMask;
+        applyTrackings(chunk);
+
+        clearIncomingTrackingData(chunk, sectionMask);
+
+        for (final Iterator<long[]> it = chunk.lightTrackingData.values().iterator(); it.hasNext(); )
+        {
+            final long[] data = it.next();
+
+            clearTrackingData(data, sectionMask);
+
+            if (chunk.lightTrackingEmpty && isTrackingTrivial(data))
+                it.remove();
+        }
+    }
+
+    public static void onChunkMapTick(final PlayerChunkMap chunkMap, final Collection<PlayerChunkMapEntry> chunks)
+    {
+        for (final PlayerChunkMapEntry chunk : chunks)
+        {
+            if (chunk.lightTrackingSectionMask == 0)
+                continue;
+
+            prepareNeighborChunks(chunk, chunkMap);
+
+            for (final EntityPlayerMP player : chunk.players)
+            {
+                final long[] data = collectTrackingData(player, chunk.lightTrackingSectionMask, chunkMap);
+
+                if (!isTrackingTrivial(data))
+                    NewLightPacketHandler.INSTANCE.sendTo(new SPacketLightTracking(chunk.getPos(), data), player);
+            }
+
+            clearOutgoingTrackingData(chunkMap, chunk.lightTrackingSectionMask);
+            chunk.lightTrackingSectionMask = 0;
+        }
+
+        Arrays.fill(chunkMap.neighborChunksCache, null);
     }
 
     private static void addMissingNeighbors(final long[] data, final int num)
