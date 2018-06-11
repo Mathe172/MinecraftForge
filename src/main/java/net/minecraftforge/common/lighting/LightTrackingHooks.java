@@ -47,6 +47,13 @@ public class LightTrackingHooks
         }
     }
 
+    public static int getTrackingFlags(final long[] data, final EnumFacing dir, final EnumSkyBlock lightType)
+    {
+        final int offset = LightTrackingHooks.getOffset(dir, lightType);
+
+        return (int) (data[offset >> 6] >> (offset & 63)) & ((1 << (dir.getAxis() == Axis.Y ? 15 : 16)) - 1);
+    }
+
     public static int getOffset(final EnumFacing dir)
     {
         return dir.getAxis() == Axis.Y ? VERTICAL_OFFSET + dir.getIndex() * 30 : (dir.getHorizontalIndex() * 32);
@@ -435,5 +442,79 @@ public class LightTrackingHooks
         }
 
         Arrays.fill(chunk.lightTrackingAdd, 0);
+    }
+
+    public static void scheduleChecksForSectionBoundaries(final World world, final int chunkX, final int chunkZ, final long[] data)
+    {
+        final PooledMutableBlockPos pos = PooledMutableBlockPos.retain();
+
+        for (final EnumFacing dir : EnumFacing.HORIZONTALS)
+        {
+            for (final EnumSkyBlock lightType : LightUtils.ENUM_SKY_BLOCK_VALUES)
+            {
+                final int sectionMask = getTrackingFlags(data, dir, lightType);
+
+                if (sectionMask == 0)
+                    continue;
+
+                final int xOffset = dir.getFrontOffsetX();
+                final int zOffset = dir.getFrontOffsetZ();
+
+                final Chunk nChunk = world.getChunkProvider().getLoadedChunk(chunkX + xOffset, chunkZ + zOffset);
+
+                if (nChunk == null)
+                    continue;
+
+                final int xBase = nChunk.x << 4;
+                final int zBase = nChunk.z << 4;
+
+                int xMin = xBase;
+                int zMin = zBase;
+
+                if ((xOffset | zOffset) < 0)
+                {
+                    xMin += 15 * (xOffset & 1);
+                    zMin += 15 * (zOffset & 1);
+                }
+
+                final int xMax = xMin + 15 * (zOffset & 1);
+                final int zMax = zMin + 15 * (xOffset & 1);
+
+                for (int y = 0; y < 16; ++y)
+                {
+                    if ((sectionMask & (1 << y)) != 0)
+                    {
+                        final int yMin = y << 4;
+
+                        LightUtils.scheduleRelightChecksForArea(world, lightType, xMin, yMin, zMin, xMax, yMin + 15, zMax, pos);
+                    }
+                }
+            }
+        }
+
+        for (final EnumSkyBlock lightType : LightUtils.ENUM_SKY_BLOCK_VALUES)
+        {
+            final int xBase = chunkX << 4;
+            final int zBase = chunkZ << 4;
+
+            final int upSectionMask = getTrackingFlags(data, EnumFacing.UP, lightType);
+            final int downSectionMask = getTrackingFlags(data, EnumFacing.DOWN, lightType);
+
+            if ((upSectionMask | downSectionMask) == 0)
+                continue;
+
+            for (int y = 0; y < 15; ++y)
+            {
+                final int yBase = y << 4;
+
+                if ((upSectionMask & (1 << y)) != 0)
+                    LightUtils.scheduleRelightChecksForArea(world, lightType, xBase, yBase + 16, zBase, xBase + 15, yBase + 16, zBase + 15, pos);
+
+                if ((downSectionMask & (1 << y)) != 0)
+                    LightUtils.scheduleRelightChecksForArea(world, lightType, xBase, yBase + 15, zBase, xBase + 15, yBase + 15, zBase + 15, pos);
+            }
+        }
+
+        pos.release();
     }
 }

@@ -1,7 +1,9 @@
 package net.minecraftforge.common.lighting.network;
 
 import io.netty.buffer.ByteBuf;
+import net.minecraft.client.Minecraft;
 import net.minecraft.util.math.ChunkPos;
+import net.minecraftforge.common.lighting.LightTrackingHooks;
 import net.minecraftforge.fml.common.network.simpleimpl.IMessage;
 import net.minecraftforge.fml.common.network.simpleimpl.IMessageHandler;
 import net.minecraftforge.fml.common.network.simpleimpl.MessageContext;
@@ -54,6 +56,10 @@ public class SPacketLightTracking implements IMessage
         @Override
         public IMessage onMessage(final SPacketLightTracking message, final MessageContext ctx)
         {
+            Minecraft.getMinecraft().addScheduledTask(
+                () -> LightTrackingHooks.scheduleChecksForSectionBoundaries(Minecraft.getMinecraft().world, message.chunkX, message.chunkZ, message.data)
+            );
+
             return null;
         }
     }
