@@ -11,5 +11,6 @@ public class NewLightPacketHandler
     public static void registerMessages()
     {
         INSTANCE.registerMessage(SPacketLightTracking.Handler.class, SPacketLightTracking.class, 0, Side.CLIENT);
+        INSTANCE.registerMessage(SPacketLightTickSync.Handler.class, SPacketLightTickSync.class, 1, Side.CLIENT);
     }
 }

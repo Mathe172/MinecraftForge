@@ -16,6 +16,7 @@ import net.minecraft.world.EnumSkyBlock;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraftforge.common.lighting.network.NewLightPacketHandler;
+import net.minecraftforge.common.lighting.network.SPacketLightTickSync;
 import net.minecraftforge.common.lighting.network.SPacketLightTracking;
 
 public class LightTrackingHooks
@@ -398,7 +399,26 @@ public class LightTrackingHooks
     public static void tick(final PlayerChunkMap chunkMap)
     {
         for (final PlayerChunkMapEntry chunk : chunkMap.lightTrackingEntries)
+        {
+            for (final EntityPlayerMP player : chunk.players)
+            {
+                if (!player.needsLightTickSync)
+                {
+                    player.needsLightTickSync = true;
+                    chunkMap.lightTickSyncPlayers.add(player);
+                }
+            }
+
             cleanupTrackingTick(chunk);
+        }
+
+        for (final EntityPlayerMP player : chunkMap.lightTickSyncPlayers)
+        {
+            player.needsLightTickSync = false;
+            NewLightPacketHandler.INSTANCE.sendTo(SPacketLightTickSync.INSTANCE, player);
+        }
+
+        chunkMap.lightTickSyncPlayers.clear();
 
         chunkMap.lightTrackingEntries.clear();
     }
