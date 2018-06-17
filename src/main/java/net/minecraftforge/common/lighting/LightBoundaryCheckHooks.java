@@ -163,7 +163,7 @@ public class LightBoundaryCheckHooks
         if (chunk.neighborLightChecks == null)
             return;
 
-        final int flagIndex = (xOffset * (zOffset - 2)) & 7;
+        final int flagIndex = (xOffset * (zOffset - 2) + 1) & 7;
 
         final int flags = chunk.neighborLightChecks[flagIndex];
 
