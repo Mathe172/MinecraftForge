@@ -4,7 +4,7 @@
      private int field_76649_t;
      private final ConcurrentLinkedQueue<BlockPos> field_177447_w;
      public boolean field_189550_d;
-+    public short[] neighborLightChecks = null;
++    public int[] neighborLightChecks = null;
 +    public short pendingNeighborLightInits;
  
      public Chunk(World p_i1995_1_, int p_i1995_2_, int p_i1995_3_)

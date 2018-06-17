@@ -147,9 +147,7 @@ public class LightingHooks
                     }
                 }
                 else
-                {
-                    LightBoundaryCheckHooks.flagChunkBoundaryForUpdate(chunk, emptySections, EnumSkyBlock.SKY, dir, LightUtils.getAxisDirection(dir, x, z), LightUtils.EnumBoundaryFacing.OUT);
-                }
+                    LightBoundaryCheckHooks.flagOuterChunkBoundaryForUpdate(chunk, x, z, dir, emptySections, EnumSkyBlock.SKY);
             }
         }
     }
