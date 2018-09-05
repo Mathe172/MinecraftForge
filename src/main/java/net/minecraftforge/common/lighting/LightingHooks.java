@@ -149,6 +149,9 @@ public class LightingHooks
                 else
                     LightBoundaryCheckHooks.flagOuterChunkBoundaryForUpdate(chunk, x, z, dir, emptySections, EnumSkyBlock.SKY);
             }
+
+            LightTrackingHooks.trackLightChangesHorizontal(chunk, x, z, emptySections, EnumSkyBlock.SKY);
+            LightTrackingHooks.trackLightChangesVertical(chunk, emptySections, EnumSkyBlock.SKY);
         }
     }
 }

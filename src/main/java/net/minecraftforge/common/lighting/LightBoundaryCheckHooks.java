@@ -43,11 +43,6 @@ public class LightBoundaryCheckHooks
         flagInnerChunkBoundaryForUpdate(chunk, pos.getX(), pos.getZ(), 1 << (pos.getY() >> 4), lightType);
     }
 
-    private static int getBoundaryRegion(final int coord)
-    {
-        return (((coord + 1) >> 1) - 4) / 4;
-    }
-
     private static void flagChunkBoundaryForUpdate(final Chunk chunk, final int index, final int sectionMask, final EnumSkyBlock lightType)
     {
         initNeighborLightChecks(chunk);
@@ -57,8 +52,8 @@ public class LightBoundaryCheckHooks
 
     public static void flagInnerChunkBoundaryForUpdate(final Chunk chunk, final int x, final int z, final int sectionMask, final EnumSkyBlock lightType)
     {
-        final int xRegion = getBoundaryRegion(x & 15);
-        final int zRegion = getBoundaryRegion(z & 15);
+        final int xRegion = LightUtils.getBoundaryRegion(x & 15);
+        final int zRegion = LightUtils.getBoundaryRegion(z & 15);
 
         final int index = (xRegion * (zRegion - 2) + 2 * ((xRegion & 1) - 1) * (zRegion - 1) + 1) & 7;
 
@@ -77,12 +72,7 @@ public class LightBoundaryCheckHooks
 
     public static void flagOuterChunkBoundaryForUpdate(final Chunk chunk, final int x, final int z, final EnumFacing dir, final int sectionMask, final EnumSkyBlock lightType)
     {
-        final int xOffset = dir.getFrontOffsetX();
-        final int zOffset = dir.getFrontOffsetZ();
-
-        final int region = getBoundaryRegion((x & 15) * (zOffset & 1) + (z & 15) * (xOffset & 1)) * (xOffset - zOffset);
-
-        final int index = getFlagIndex(dir, EnumBoundaryFacing.OUT) - region;
+        final int index = getFlagIndex(dir, EnumBoundaryFacing.OUT) - LightUtils.getBoundaryRegion(x, z, dir);
 
         flagChunkBoundaryForUpdate(chunk, index, sectionMask, lightType);
     }
@@ -92,8 +82,10 @@ public class LightBoundaryCheckHooks
         if (neighborChunk.neighborLightChecks == null)
             return;
 
+        final EnumFacing oppDir = dir.getOpposite();
+
         final int inIndex = getFlagIndex(dir, EnumBoundaryFacing.IN);
-        final int outIndex = getFlagIndex(dir.getOpposite(), EnumBoundaryFacing.OUT);
+        final int outIndex = getFlagIndex(oppDir, EnumBoundaryFacing.OUT);
 
         for (int offset = -1; offset <= 1; ++offset)
         {
@@ -104,6 +96,9 @@ public class LightBoundaryCheckHooks
                 initNeighborLightChecks(chunk);
                 chunk.neighborLightChecks[(inIndex + offset) & 7] |= neighborFlags;
                 neighborChunk.neighborLightChecks[outIndex + offset] = 0;
+
+                LightTrackingHooks.initLightTrackings(neighborChunk);
+                neighborChunk.lightTrackings[LightTrackingHooks.getHorizontalFlagIndex(oppDir) + offset] |= neighborFlags;
             }
         }
 

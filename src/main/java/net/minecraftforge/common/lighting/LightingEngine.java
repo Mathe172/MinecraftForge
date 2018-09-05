@@ -332,6 +332,7 @@ public class LightingEngine
 
                 if (oldLight == curLight) //only process this if nothing else has happened at this position since scheduling
                 {
+                    LightTrackingHooks.trackLightChange(this.curChunk, this.curPos, lightType);
                     this.world.notifyLightSet(this.curPos);
 
                     if (curLight > 1)
