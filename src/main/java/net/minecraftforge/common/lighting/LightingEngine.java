@@ -110,7 +110,7 @@ public class LightingEngine
     private final MutableBlockPos curPos = new MutableBlockPos();
     private PooledLongQueue curQueue;
     private Chunk curChunk;
-    private long curChunkIdentifier;
+    private long curChunkIdentifier = -1;
     private long curData;
 
     //Cached data about neighboring blocks (of tempPos)
@@ -205,7 +205,6 @@ public class LightingEngine
         }
 
         this.updating = true;
-        this.curChunkIdentifier = -1; //reset chunk cache
 
         this.profiler.startSection("lighting");
 
@@ -254,7 +253,7 @@ public class LightingEngine
             if (oldLight != 0)
             {
                 //Sets the light to 0 to only schedule once
-                this.enqueueDarkening(this.curPos, this.curData, oldLight, this.curChunk);
+                this.enqueueDarkeningFromCur(oldLight);
             }
         }
 
@@ -344,6 +343,10 @@ public class LightingEngine
         }
 
         this.profiler.endSection();
+
+        // Reset chunk cache
+        this.curChunk = null;
+        this.curChunkIdentifier = -1;
 
         this.updating = false;
     }
@@ -451,16 +454,31 @@ public class LightingEngine
     /**
      * Enqueues the pos for brightening and sets its light value to <code>newLight</code>
      */
-    private void enqueueBrightening(final BlockPos pos, final long longPos, final int newLight, final Chunk chunk)
+    private void enqueueBrightening(
+        final BlockPos pos,
+        final long longPos,
+        final int newLight,
+        final Chunk chunk
+    )
     {
         this.queuedBrightenings[newLight].add(longPos);
         chunk.setLightFor(this.lightType, pos, newLight);
     }
 
+    private void enqueueDarkeningFromCur(final int oldLight)
+    {
+        this.enqueueDarkening(this.curPos, this.curData, oldLight, this.curChunk);
+    }
+
     /**
      * Enqueues the pos for darkening and sets its light value to 0
      */
-    private void enqueueDarkening(final BlockPos pos, final long longPos, final int oldLight, final Chunk chunk)
+    private void enqueueDarkening(
+        final BlockPos pos,
+        final long longPos,
+        final int oldLight,
+        final Chunk chunk
+    )
     {
         this.queuedDarkenings[oldLight].add(longPos);
         chunk.setLightFor(this.lightType, pos, 0);
