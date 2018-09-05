@@ -41,7 +41,7 @@ public class LightInitHooks
         if (chunk.isLightPopulated() || chunk.pendingNeighborLightInits != 0)
             return;
 
-        chunk.pendingNeighborLightInits = 15;
+        chunk.pendingNeighborLightInits = 31;
 
         chunk.markDirty();
 
@@ -108,9 +108,6 @@ public class LightInitHooks
             return;
 
         chunk.pendingNeighborLightInits ^= flag;
-
-        if (chunk.pendingNeighborLightInits == 0)
-            chunk.setLightPopulated(true);
 
         chunk.markDirty();
 
@@ -185,7 +182,40 @@ public class LightInitHooks
 
             initNeighborLight(world, chunk, nChunk, dir);
             initNeighborLight(world, nChunk, chunk, dir.getOpposite());
+
+            checkNeighborsLoaded(provider, nChunk);
         }
+
+        for (int x = 0; x <= 1; ++x)
+            for (int z = 0; z <= 1; ++z)
+            {
+                final Chunk nChunk = provider.getLoadedChunk(chunk.x + (x << 1) - 1, chunk.z + (z << 1) - 1);
+
+                if (nChunk != null)
+                    checkNeighborsLoaded(provider, nChunk);
+            }
+
+        checkNeighborsLoaded(provider, chunk);
+    }
+
+    private static void checkNeighborsLoaded(final IChunkProvider provider, final Chunk chunk)
+    {
+        if (chunk.pendingNeighborLightInits != 16)
+            return;
+
+        for (int x = -1; x <= 1; ++x)
+            for (int z = -1; z <= 1; ++z)
+            {
+                if (x == 0 && z == 0)
+                    continue;
+
+                if (provider.getLoadedChunk(chunk.x + x, chunk.z + z) == null)
+                    return;
+            }
+
+        chunk.pendingNeighborLightInits = 0;
+        chunk.setLightPopulated(true);
+        chunk.markDirty();
     }
 
     static void writeNeighborInitsToNBT(final Chunk chunk, final NBTTagCompound nbt)
