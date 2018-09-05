@@ -287,9 +287,11 @@ public class LightingEngine
                     {
                         final Chunk nChunk = this.neighborsChunk[i];
 
+                        final EnumFacing dir = EnumFacing.VALUES[i];
+
                         if (nChunk == null)
                         {
-                            LightBoundaryCheckHooks.flagSecBoundaryForUpdate(this.curChunk, this.curPos, this.lightType, EnumFacing.VALUES[i], LightUtils.EnumBoundaryFacing.OUT);
+                            LightBoundaryCheckHooks.flagOuterSecBoundaryForUpdate(this.curChunk, this.curPos, dir, this.lightType);
                             continue;
                         }
 
@@ -409,7 +411,7 @@ public class LightingEngine
         {
             if (this.neighborsChunk[i] == null)
             {
-                LightBoundaryCheckHooks.flagSecBoundaryForUpdate(this.curChunk, this.curPos, this.lightType, EnumFacing.VALUES[i], LightUtils.EnumBoundaryFacing.IN);
+                LightBoundaryCheckHooks.flagInnerSecBoundaryForUpdate(this.curChunk, this.curPos, this.lightType);
                 continue;
             }
 
@@ -431,9 +433,11 @@ public class LightingEngine
 
             final Chunk nChunk = this.neighborsChunk[i];
 
+            final EnumFacing dir = EnumFacing.VALUES[i];
+
             if (nChunk == null)
             {
-                LightBoundaryCheckHooks.flagSecBoundaryForUpdate(this.curChunk, this.curPos, this.lightType, EnumFacing.VALUES[i], LightUtils.EnumBoundaryFacing.OUT);
+                LightBoundaryCheckHooks.flagOuterSecBoundaryForUpdate(this.curChunk, this.curPos, dir, this.lightType);
                 continue;
             }
 
