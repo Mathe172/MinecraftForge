@@ -30,13 +30,15 @@ import net.minecraft.util.math.BlockPos.PooledMutableBlockPos;
 import net.minecraft.world.EnumSkyBlock;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.Chunk;
+import net.minecraft.world.chunk.IChunkProvider;
 import net.minecraftforge.fml.common.FMLLog;
 
 public class LightBoundaryCheckHooks
 {
     public static final String neighborLightChecksKey = "NeighborLightChecks";
-    private static final int OUT_INDEX_OFFSET = 8;
-    private static final int FLAG_COUNT = OUT_INDEX_OFFSET + 12;
+    static final int OUT_INDEX_OFFSET = 8;
+    private static final int FLAG_COUNT_CLIENT = OUT_INDEX_OFFSET + 2;
+    private static final int FLAG_COUNT_SERVER = OUT_INDEX_OFFSET + 12;
 
     public static void flagInnerSecBoundaryForUpdate(final Chunk chunk, final BlockPos pos, final EnumSkyBlock lightType)
     {
@@ -58,6 +60,9 @@ public class LightBoundaryCheckHooks
         final int index = (xRegion * (zRegion - 2) + 2 * ((xRegion & 1) - 1) * (zRegion - 1) + 1) & 7;
 
         flagChunkBoundaryForUpdate(chunk, index, sectionMask, lightType);
+
+        if (chunk.getWorld().isRemote)
+            chunk.pendingBoundaryChecks = true;
     }
 
     public static int getFlagIndex(final EnumFacing dir, final EnumBoundaryFacing boundaryFacing)
@@ -72,6 +77,9 @@ public class LightBoundaryCheckHooks
 
     public static void flagOuterChunkBoundaryForUpdate(final Chunk chunk, final int x, final int z, final EnumFacing dir, final int sectionMask, final EnumSkyBlock lightType)
     {
+        if (chunk.getWorld().isRemote)
+            return;
+
         final int index = getFlagIndex(dir, EnumBoundaryFacing.OUT) - LightUtils.getBoundaryRegion(x, z, dir);
 
         flagChunkBoundaryForUpdate(chunk, index, sectionMask, lightType);
@@ -106,7 +114,7 @@ public class LightBoundaryCheckHooks
         neighborChunk.markDirty();
     }
 
-    public static void scheduleRelightChecksForChunkBoundaries(final World world, final Chunk chunk)
+    public static void scheduleRelightChecksForChunkBoundariesServer(final World world, final Chunk chunk)
     {
         final PooledMutableBlockPos pos = PooledMutableBlockPos.retain();
 
@@ -143,6 +151,49 @@ public class LightBoundaryCheckHooks
         pos.release();
     }
 
+    static void scheduleRelightChecksForChunkBoundariesClient(final World world, final Chunk chunk)
+    {
+        final PooledMutableBlockPos pos = PooledMutableBlockPos.retain();
+
+        for (final EnumFacing dir : EnumFacing.HORIZONTALS)
+            scheduleRelightChecksForInteriorBoundary(world, chunk, dir, pos);
+
+        for (final AxisDirection xAxis : LightUtils.ENUM_AXIS_DIRECTION_VALUES)
+            for (final AxisDirection zAxis : LightUtils.ENUM_AXIS_DIRECTION_VALUES)
+            {
+                final int xOffset = xAxis.getOffset();
+                final int zOffset = zAxis.getOffset();
+
+                scheduleRelightChecksForCorner(world, chunk, xOffset, zOffset, pos);
+            }
+
+        for (int i = 0; i <= 1; ++i)
+        {
+            final int flags = chunk.neighborLightChecks[LightBoundaryCheckHooks.OUT_INDEX_OFFSET + i];
+
+            if (flags != 0)
+            {
+                chunk.neighborLightChecks[LightBoundaryCheckHooks.OUT_INDEX_OFFSET] = 0;
+
+                for (final EnumSkyBlock lightType : LightUtils.ENUM_SKY_BLOCK_VALUES)
+                {
+                    final int shift = LightUtils.getIndex(lightType) << 4;
+                    final int sectionMask = (flags >> shift) & ((1 << 16) - 1);
+
+                    for (int y = 0; y < 16; ++y)
+                    {
+                        final int yBase = (y << 4) + (15 & (i - 1));
+
+                        if ((sectionMask & (1 << y)) != 0)
+                            LightUtils.scheduleRelightChecksForArea(world, lightType, chunk.x, yBase, chunk.z, chunk.x + 15, yBase, chunk.z + 15, pos);
+                    }
+                }
+            }
+        }
+
+        pos.release();
+    }
+
     private static void scheduleRelightChecksForNeighbor(final World world, final Chunk nChunk, final EnumFacing dir, final MutableBlockPos pos)
     {
         scheduleRelightChecksForInteriorBoundary(world, nChunk, dir.getOpposite(), pos);
@@ -160,7 +211,7 @@ public class LightBoundaryCheckHooks
         }
     }
 
-    private static void scheduleRelightChecksForCorner(
+    static void scheduleRelightChecksForCorner(
         final World world,
         final Chunk chunk,
         final int xOffset,
@@ -196,7 +247,7 @@ public class LightBoundaryCheckHooks
         }
     }
 
-    private static void scheduleRelightChecksForInteriorBoundary(
+    static void scheduleRelightChecksForInteriorBoundary(
         final World world,
         final Chunk chunk,
         final EnumFacing dir,
@@ -256,7 +307,7 @@ public class LightBoundaryCheckHooks
     public static void initNeighborLightChecks(final Chunk chunk)
     {
         if (chunk.neighborLightChecks == null)
-            chunk.neighborLightChecks = new int[FLAG_COUNT];
+            chunk.neighborLightChecks = new int[chunk.getWorld().isRemote ? FLAG_COUNT_CLIENT : FLAG_COUNT_SERVER];
     }
 
     static void writeNeighborLightChecksToNBT(final Chunk chunk, final NBTTagCompound nbt)
@@ -287,15 +338,67 @@ public class LightBoundaryCheckHooks
         {
             final NBTTagList list = nbt.getTagList(neighborLightChecksKey, 3);
 
-            if (list.tagCount() == FLAG_COUNT)
+            if (list.tagCount() == FLAG_COUNT_SERVER)
             {
                 initNeighborLightChecks(chunk);
 
-                for (int i = 0; i < FLAG_COUNT; ++i)
+                for (int i = 0; i < FLAG_COUNT_SERVER; ++i)
                     chunk.neighborLightChecks[i] = ((NBTTagInt) list.get(i)).getInt();
             }
             else
                 FMLLog.info("Boundary checks for chunk (%s, %s) are discarded. They are probably from an older version.", chunk.x, chunk.z);
+        }
+    }
+
+    public static void onLoad(final World world, final Chunk chunk)
+    {
+        final IChunkProvider provider = world.getChunkProvider();
+
+        for (int x = -1; x <= 1; ++x)
+            for (int z = -1; z <= 1; ++z)
+            {
+                if (x == 0 && z == 0)
+                    continue;
+
+                final Chunk nChunk = provider.getLoadedChunk(chunk.x + x, chunk.z + z);
+
+                if (nChunk != null)
+                {
+                    ++chunk.neighborsLoaded;
+                    ++nChunk.neighborsLoaded;
+                }
+            }
+    }
+
+    public static void onUnload(final World world, final Chunk chunk)
+    {
+        if (!world.isRemote)
+            return;
+
+        final IChunkProvider provider = world.getChunkProvider();
+
+        for (int x = -1; x <= 1; ++x)
+            for (int z = -1; z <= 1; ++z)
+            {
+                if (x == 0 && z == 0)
+                    continue;
+
+                final Chunk nChunk = provider.getLoadedChunk(chunk.x + x, chunk.z + z);
+
+                if (nChunk != null)
+                    --nChunk.neighborsLoaded;
+            }
+    }
+
+    public static void onTick(final World world, final Chunk chunk)
+    {
+        if (!world.isRemote)
+            return;
+
+        if (chunk.pendingBoundaryChecks && chunk.neighborsLoaded == 8)
+        {
+            scheduleRelightChecksForChunkBoundariesClient(world, chunk);
+            chunk.pendingBoundaryChecks = false;
         }
     }
 

@@ -33,11 +33,27 @@ import net.minecraft.world.chunk.storage.ExtendedBlockStorage;
 
 public class LightingHooks
 {
-    public static void onLoad(final World world, final Chunk chunk)
+    public static void onLoadServer(final World world, final Chunk chunk)
     {
         LightInitHooks.initChunkLighting(world, chunk);
         LightInitHooks.initNeighborLight(world, chunk);
-        LightBoundaryCheckHooks.scheduleRelightChecksForChunkBoundaries(world, chunk);
+        LightBoundaryCheckHooks.scheduleRelightChecksForChunkBoundariesServer(world, chunk);
+    }
+
+    public static void onLoadClient(final World world, final Chunk chunk)
+    {
+        LightBoundaryCheckHooks.onLoad(world, chunk);
+    }
+
+    public static void onUnload(final World world, final Chunk chunk)
+    {
+        world.lightingEngine.procLightUpdates();
+        LightBoundaryCheckHooks.onUnload(world, chunk);
+    }
+
+    public static void onTick(final World world, final Chunk chunk)
+    {
+        LightBoundaryCheckHooks.onTick(world, chunk);
     }
 
     public static void writeLightData(final Chunk chunk, final NBTTagCompound nbt)
