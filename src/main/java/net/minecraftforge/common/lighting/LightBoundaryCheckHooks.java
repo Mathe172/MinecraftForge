@@ -23,6 +23,7 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagInt;
 import net.minecraft.nbt.NBTTagList;
 import net.minecraft.util.EnumFacing;
+import net.minecraft.util.EnumFacing.Axis;
 import net.minecraft.util.EnumFacing.AxisDirection;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.BlockPos.MutableBlockPos;
@@ -67,6 +68,16 @@ public class LightBoundaryCheckHooks
 
     public static int getFlagIndex(final EnumFacing dir, final EnumBoundaryFacing boundaryFacing)
     {
+        return dir.getAxis() == Axis.Y ? getVerticalFlagIndex(dir, boundaryFacing) : getHorizontalFlagIndex(dir, boundaryFacing);
+    }
+
+    public static int getVerticalFlagIndex(final EnumFacing dir, final EnumBoundaryFacing boundaryFacing)
+    {
+        return OUT_INDEX_OFFSET + ((dir.getIndex() + boundaryFacing.verticalOffset) & 1);
+    }
+
+    public static int getHorizontalFlagIndex(final EnumFacing dir, final EnumBoundaryFacing boundaryFacing)
+    {
         return dir.getHorizontalIndex() * boundaryFacing.indexMultiplier + boundaryFacing.offset + 1;
     }
 
@@ -80,7 +91,7 @@ public class LightBoundaryCheckHooks
         if (chunk.getWorld().isRemote)
             return;
 
-        final int index = getFlagIndex(dir, EnumBoundaryFacing.OUT) - LightUtils.getBoundaryRegion(x, z, dir);
+        final int index = getHorizontalFlagIndex(dir, EnumBoundaryFacing.OUT) - LightUtils.getBoundaryRegion(x, z, dir);
 
         flagChunkBoundaryForUpdate(chunk, index, sectionMask, lightType);
     }
@@ -92,8 +103,8 @@ public class LightBoundaryCheckHooks
 
         final EnumFacing oppDir = dir.getOpposite();
 
-        final int inIndex = getFlagIndex(dir, EnumBoundaryFacing.IN);
-        final int outIndex = getFlagIndex(oppDir, EnumBoundaryFacing.OUT);
+        final int inIndex = getHorizontalFlagIndex(dir, EnumBoundaryFacing.IN);
+        final int outIndex = getHorizontalFlagIndex(oppDir, EnumBoundaryFacing.OUT);
 
         for (int offset = -1; offset <= 1; ++offset)
         {
@@ -257,7 +268,7 @@ public class LightBoundaryCheckHooks
         if (chunk.neighborLightChecks == null)
             return;
 
-        final int flagIndex = getFlagIndex(dir, EnumBoundaryFacing.IN); // OUT checks from neighbor are already merged
+        final int flagIndex = getHorizontalFlagIndex(dir, EnumBoundaryFacing.IN); // OUT checks from neighbor are already merged
 
         final int flags = chunk.neighborLightChecks[flagIndex];
 
@@ -302,6 +313,23 @@ public class LightBoundaryCheckHooks
                     LightUtils.scheduleRelightChecksForArea(world, lightType, xMin, y << 4, zMin, xMax, (y << 4) + 15, zMax, pos);
             }
         }
+    }
+
+    static void flagVerticalSecBoundaryForCheckClient(final Chunk chunk, final EnumFacing dir, final int sectionMask)
+    {
+        flagSecBoundaryForCheckClient(chunk, getVerticalFlagIndex(dir, EnumBoundaryFacing.IN), sectionMask);
+    }
+
+    static void flagHorizontalSecBoundaryForCheckClient(final Chunk chunk, final EnumFacing dir, final int region, final int sectionMask)
+    {
+        flagSecBoundaryForCheckClient(chunk, (getHorizontalFlagIndex(dir, EnumBoundaryFacing.IN) + region) & 7, sectionMask);
+    }
+
+    static void flagSecBoundaryForCheckClient(final Chunk chunk, final int index, final int sectionMask)
+    {
+        initNeighborLightChecks(chunk);
+        chunk.neighborLightChecks[index] |= sectionMask;
+        chunk.pendingBoundaryChecks = true;
     }
 
     public static void initNeighborLightChecks(final Chunk chunk)
@@ -402,18 +430,20 @@ public class LightBoundaryCheckHooks
         }
     }
 
-    private enum EnumBoundaryFacing
+    public enum EnumBoundaryFacing
     {
-        IN(2, 0),
-        OUT(3, OUT_INDEX_OFFSET);
+        IN(2, 0, -1),
+        OUT(3, OUT_INDEX_OFFSET, 0);
 
         final int indexMultiplier;
         final int offset;
+        final int verticalOffset;
 
-        EnumBoundaryFacing(final int indexMultiplier, final int offset)
+        EnumBoundaryFacing(final int indexMultiplier, final int offset, final int verticalOffset)
         {
             this.indexMultiplier = indexMultiplier;
             this.offset = offset;
+            this.verticalOffset = verticalOffset;
         }
     }
 }

@@ -25,6 +25,7 @@ import net.minecraft.world.EnumSkyBlock;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.IChunkProvider;
+import net.minecraftforge.common.lighting.LightBoundaryCheckHooks.EnumBoundaryFacing;
 
 public class LightTrackingHooks
 {
@@ -115,6 +116,61 @@ public class LightTrackingHooks
             for (int i = 0; i < chunk.neighborLightTrackings.length; ++i)
                 chunk.neighborLightTrackings[i] &= ~flagMask;
         }
+
+        final IChunkProvider provider = chunk.getWorld().getChunkProvider();
+
+        for (final EnumFacing dir : EnumFacing.HORIZONTALS)
+        {
+            int index = getHorizontalFlagIndex(dir);
+
+            final EnumFacing oppDir = dir.getOpposite();
+
+            final Chunk nChunk = provider.getLoadedChunk(chunk.x + dir.getFrontOffsetX(), chunk.z + dir.getFrontOffsetZ());
+
+            if (chunk.lightTrackings != null)
+            {
+                for (int offset = -1; offset <= 1; ++offset)
+                {
+                    final int flags = chunk.lightTrackings[index + offset] & flagMask;
+                    chunk.lightTrackings[index + offset] &= ~flagMask;
+
+                    if (nChunk != null && flags != 0)
+                        LightBoundaryCheckHooks.flagHorizontalSecBoundaryForCheckClient(nChunk, oppDir, offset, flags);
+                }
+            }
+
+            if (nChunk == null || nChunk.lightTrackings == null)
+                continue;
+
+            index = getHorizontalFlagIndex(oppDir);
+
+            for (int offset = -1; offset <= 1; ++offset)
+            {
+                final int flags = nChunk.lightTrackings[index + offset] & flagMask;
+
+                if (flags != 0)
+                    LightBoundaryCheckHooks.flagHorizontalSecBoundaryForCheckClient(chunk, dir, offset, flags);
+            }
+        }
+
+        if (chunk.lightTrackings == null)
+            return;
+
+        int index = LightBoundaryCheckHooks.getVerticalFlagIndex(EnumFacing.DOWN, EnumBoundaryFacing.OUT);
+
+        int flags = ((chunk.lightTrackings[index] & flagMask) >>> 1) & ~flagMask;
+        chunk.lightTrackings[index] &= ~flagMask;
+
+        if (flags != 0)
+            LightBoundaryCheckHooks.flagVerticalSecBoundaryForCheckClient(chunk, EnumFacing.UP, flags);
+
+        index = LightBoundaryCheckHooks.getVerticalFlagIndex(EnumFacing.UP, EnumBoundaryFacing.OUT);
+
+        flags = ((chunk.lightTrackings[index] & flagMask) << 1) & ~flagMask;
+        chunk.lightTrackings[index] &= ~flagMask;
+
+        if (flags != 0)
+            LightBoundaryCheckHooks.flagVerticalSecBoundaryForCheckClient(chunk, EnumFacing.DOWN, flags);
     }
 
     public static void onLoad(final World world, final Chunk chunk)
