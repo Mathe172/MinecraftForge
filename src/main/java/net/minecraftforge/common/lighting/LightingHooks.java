@@ -35,6 +35,7 @@ public class LightingHooks
 {
     public static void onLoadServer(final World world, final Chunk chunk)
     {
+        LightTrackingHooks.onLoad(world, chunk);
         LightInitHooks.initChunkLighting(world, chunk);
         LightInitHooks.initNeighborLight(world, chunk);
         LightBoundaryCheckHooks.scheduleRelightChecksForChunkBoundariesServer(world, chunk);
@@ -42,12 +43,14 @@ public class LightingHooks
 
     public static void onLoadClient(final World world, final Chunk chunk)
     {
+        LightTrackingHooks.onLoad(world, chunk);
         LightBoundaryCheckHooks.onLoad(world, chunk);
     }
 
     public static void onUnload(final World world, final Chunk chunk)
     {
         world.lightingEngine.procLightUpdates();
+        LightTrackingHooks.onUnload(world, chunk);
         LightBoundaryCheckHooks.onUnload(world, chunk);
     }
 

@@ -22,7 +22,9 @@ package net.minecraftforge.common.lighting;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.EnumSkyBlock;
+import net.minecraft.world.World;
 import net.minecraft.world.chunk.Chunk;
+import net.minecraft.world.chunk.IChunkProvider;
 
 public class LightTrackingHooks
 {
@@ -104,9 +106,82 @@ public class LightTrackingHooks
         chunk.lightTrackings[index] |= sectionMask << (LightUtils.getIndex(lightType) << 4);
     }
 
+    public static void onChunkReceive(final Chunk chunk, final int sectionMask)
+    {
+        final int flagMask = sectionMask | (sectionMask << 16);
+
+        if (chunk.neighborLightTrackings != null)
+        {
+            for (int i = 0; i < chunk.neighborLightTrackings.length; ++i)
+                chunk.neighborLightTrackings[i] &= ~flagMask;
+        }
+    }
+
+    public static void onLoad(final World world, final Chunk chunk)
+    {
+        final IChunkProvider provider = world.getChunkProvider();
+
+        for (final EnumFacing dir : EnumFacing.HORIZONTALS)
+        {
+            final Chunk nChunk = provider.getLoadedChunk(chunk.x + dir.getFrontOffsetX(), chunk.z + dir.getFrontOffsetZ());
+
+            if (nChunk != null && nChunk.neighborLightChecks != null)
+            {
+                final int index = getHorizontalFlagIndex(dir);
+
+                for (int offset = -1; offset <= 1; ++offset)
+                {
+                    final int flags = nChunk.neighborLightTrackings[index + offset];
+
+                    if (flags != 0)
+                    {
+                        initLightTrackings(chunk);
+                        chunk.lightTrackings[index + offset] = nChunk.neighborLightTrackings[index + offset];
+                        nChunk.neighborLightTrackings[index + offset] = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    public static void onUnload(final World world, final Chunk chunk)
+    {
+        if (chunk.lightTrackings == null)
+            return;
+
+        final IChunkProvider provider = world.getChunkProvider();
+
+        for (final EnumFacing dir : EnumFacing.HORIZONTALS)
+        {
+            final Chunk nChunk = provider.getLoadedChunk(chunk.x + dir.getFrontOffsetX(), chunk.z + dir.getFrontOffsetZ());
+
+            if (nChunk != null)
+            {
+                final int index = getHorizontalFlagIndex(dir);
+
+                for (int offset = -1; offset <= 1; ++offset)
+                {
+                    final int flags = chunk.lightTrackings[index + offset];
+
+                    if (flags != 0)
+                    {
+                        initNeighborLightTrackings(nChunk);
+                        nChunk.neighborLightTrackings[index + offset] = chunk.lightTrackings[index + offset];
+                    }
+                }
+            }
+        }
+    }
+
     public static void initLightTrackings(final Chunk chunk)
     {
         if (chunk.lightTrackings == null)
             chunk.lightTrackings = new int[FLAG_COUNT];
+    }
+
+    public static void initNeighborLightTrackings(final Chunk chunk)
+    {
+        if (chunk.neighborLightTrackings == null)
+            chunk.neighborLightTrackings = new int[NEIGHBOR_FLAG_COUNT];
     }
 }
