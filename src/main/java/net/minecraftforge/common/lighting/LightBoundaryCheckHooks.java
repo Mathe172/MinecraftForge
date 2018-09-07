@@ -38,7 +38,7 @@ public class LightBoundaryCheckHooks
 {
     public static final String neighborLightChecksKey = "NeighborLightChecks";
     static final int OUT_INDEX_OFFSET = 8;
-    private static final int FLAG_COUNT_CLIENT = OUT_INDEX_OFFSET + 2;
+    static final int FLAG_COUNT_CLIENT = OUT_INDEX_OFFSET + 2;
     private static final int FLAG_COUNT_SERVER = OUT_INDEX_OFFSET + 12;
 
     public static void flagInnerSecBoundaryForUpdate(final Chunk chunk, final BlockPos pos, final EnumSkyBlock lightType)
@@ -79,6 +79,11 @@ public class LightBoundaryCheckHooks
     public static int getHorizontalFlagIndex(final EnumFacing dir, final EnumBoundaryFacing boundaryFacing)
     {
         return dir.getHorizontalIndex() * boundaryFacing.indexMultiplier + boundaryFacing.offset + 1;
+    }
+
+    public static int getHorizontalFlagIndex(final EnumFacing dir, final EnumBoundaryFacing boundaryFacing, final int region)
+    {
+        return (getHorizontalFlagIndex(dir, boundaryFacing) + region) & 7;
     }
 
     public static void flagOuterSecBoundaryForUpdate(final Chunk chunk, final BlockPos pos, final EnumFacing dir, final EnumSkyBlock lightType)
@@ -322,7 +327,7 @@ public class LightBoundaryCheckHooks
 
     static void flagHorizontalSecBoundaryForCheckClient(final Chunk chunk, final EnumFacing dir, final int region, final int sectionMask)
     {
-        flagSecBoundaryForCheckClient(chunk, (getHorizontalFlagIndex(dir, EnumBoundaryFacing.IN) + region) & 7, sectionMask);
+        flagSecBoundaryForCheckClient(chunk, getHorizontalFlagIndex(dir, EnumBoundaryFacing.IN, region), sectionMask);
     }
 
     static void flagSecBoundaryForCheckClient(final Chunk chunk, final int index, final int sectionMask)
