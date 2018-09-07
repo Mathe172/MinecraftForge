@@ -19,8 +19,15 @@
 
 package net.minecraftforge.common.lighting;
 
+import java.util.Arrays;
+import java.util.Map.Entry;
+
+import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraft.server.management.PlayerChunkMap;
+import net.minecraft.server.management.PlayerChunkMapEntry;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.EnumSkyBlock;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.Chunk;
@@ -30,6 +37,7 @@ import net.minecraftforge.common.lighting.LightBoundaryCheckHooks.EnumBoundaryFa
 public class LightTrackingHooks
 {
     private static final int NEIGHBOR_FLAG_COUNT = 12;
+    private static final int PLAYER_NEIGHBOR_FLAG_COUNT = NEIGHBOR_FLAG_COUNT + 1;
     private static final int FLAG_COUNT = NEIGHBOR_FLAG_COUNT + 2;
 
     private static final int[] VERTICAL_MASKS = new int[2];
@@ -173,6 +181,177 @@ public class LightTrackingHooks
             LightBoundaryCheckHooks.flagVerticalSecBoundaryForCheckClient(chunk, EnumFacing.DOWN, flags);
     }
 
+    public static void addPlayer(final EntityPlayerMP player, final PlayerChunkMapEntry chunk, final PlayerChunkMap chunkMap)
+    {
+        applyTrackings(chunk, chunkMap);
+
+        chunk.lightTrackings.put(player, null);
+
+        final ChunkPos pos = chunk.getPos();
+
+        int[] neighborLightTrackings = null;
+
+        for (final EnumFacing dir : EnumFacing.HORIZONTALS)
+        {
+            final PlayerChunkMapEntry nChunk = chunkMap.getEntry(pos.x + dir.getFrontOffsetX(), pos.z + dir.getFrontOffsetZ());
+
+            if (nChunk == null || !nChunk.lightTrackings.containsKey(player))
+            {
+                if (neighborLightTrackings == null)
+                    neighborLightTrackings = new int[PLAYER_NEIGHBOR_FLAG_COUNT];
+
+                neighborLightTrackings[NEIGHBOR_FLAG_COUNT] |= (1 << dir.getOpposite().getHorizontalIndex());
+
+                applyTrackings(chunk, dir, chunkMap);
+            }
+            else
+            {
+                final int[] lightTrackings = nChunk.neighborLightTrackings.get(player);
+
+                if (lightTrackings != null)
+                {
+                    final int dirFlag = 1 << dir.getHorizontalIndex();
+
+                    if (!isLightTrackingsEmpty(lightTrackings, dir))
+                    {
+                        copyLightTrackings(lightTrackings, initPlayerLightTrackings(chunk, player), dir);
+                        clearLightTrackings(lightTrackings, dir);
+                    }
+
+                    lightTrackings[NEIGHBOR_FLAG_COUNT] &= ~dirFlag;
+
+                    if (lightTrackings[NEIGHBOR_FLAG_COUNT] == 0)
+                        nChunk.neighborLightTrackings.remove(player);
+                }
+            }
+        }
+
+        if (neighborLightTrackings != null)
+            chunk.neighborLightTrackings.put(player, neighborLightTrackings);
+    }
+
+    public static void removePlayer(final EntityPlayerMP player, final PlayerChunkMapEntry chunk, final PlayerChunkMap chunkMap)
+    {
+        chunk.neighborLightTrackings.remove(player);
+
+        final ChunkPos pos = chunk.getPos();
+
+        final int[] lightTrackings = chunk.lightTrackings.get(player);
+
+        for (final EnumFacing dir : EnumFacing.HORIZONTALS)
+        {
+            final PlayerChunkMapEntry nChunk = chunkMap.getEntry(pos.x + dir.getFrontOffsetX(), pos.z + dir.getFrontOffsetZ());
+
+            if (nChunk != null && nChunk.lightTrackings.containsKey(player))
+            {
+                int[] neighborLightTrackings = nChunk.neighborLightTrackings.get(player);
+
+                if (neighborLightTrackings == null)
+                {
+                    neighborLightTrackings = new int[PLAYER_NEIGHBOR_FLAG_COUNT];
+                    nChunk.neighborLightTrackings.put(player, neighborLightTrackings);
+                }
+
+                final int dirFlag = 1 << dir.getHorizontalIndex();
+
+                neighborLightTrackings[NEIGHBOR_FLAG_COUNT] |= dirFlag;
+
+                if (lightTrackings != null)
+                    copyLightTrackings(lightTrackings, neighborLightTrackings, dir);
+            }
+        }
+
+        chunk.lightTrackings.remove(player);
+    }
+
+    static void applyTrackings(final PlayerChunkMapEntry playerChunk, final PlayerChunkMap chunkMap)
+    {
+        final Chunk chunk = playerChunk.getChunk();
+
+        if (chunk == null || chunk.lightTrackings == null || isLightTrackingsEmpty(chunk.lightTrackings))
+            return;
+
+        for (final Entry<EntityPlayerMP, int[]> item : playerChunk.lightTrackings.entrySet())
+        {
+            initPlayerLightTrackings(item);
+            final int[] playerLightTrackings = item.getValue();
+
+            for (int i = 0; i < chunk.lightTrackings.length; ++i)
+                playerLightTrackings[i] |= chunk.lightTrackings[i];
+        }
+
+        for (final EnumFacing dir : EnumFacing.HORIZONTALS)
+        {
+            if (isLightTrackingsEmpty(chunk.lightTrackings, dir))
+                continue;
+
+            final PlayerChunkMapEntry nPlayerChunk = chunkMap.getEntry(chunk.x + dir.getFrontOffsetX(), chunk.z + dir.getFrontOffsetZ());
+
+            if (nPlayerChunk == null)
+                continue;
+
+            for (final Entry<EntityPlayerMP, int[]> item : nPlayerChunk.neighborLightTrackings.entrySet())
+            {
+                final int[] playerLightTrackings = item.getValue();
+
+                if ((playerLightTrackings[NEIGHBOR_FLAG_COUNT] & (1 << dir.getHorizontalIndex())) != 0)
+                    copyLightTrackings(chunk.lightTrackings, playerLightTrackings, dir);
+            }
+        }
+
+        Arrays.fill(chunk.lightTrackings, 0);
+    }
+
+    static void applyTrackings(final PlayerChunkMapEntry playerChunk, final EnumFacing dir, final PlayerChunkMap chunkMap)
+    {
+        final EnumFacing oppDir = dir.getOpposite();
+
+        final ChunkPos pos = playerChunk.getPos();
+
+        final Chunk chunk = playerChunk.getChunk();
+        final Chunk nChunk = chunkMap.getWorldServer().getChunkProvider().getLoadedChunk(pos.x + dir.getFrontOffsetX(), pos.z + dir.getFrontOffsetZ());
+
+        if (nChunk != null)
+        {
+            if (nChunk.lightTrackings != null && !isLightTrackingsEmpty(nChunk.lightTrackings, oppDir))
+            {
+                final PlayerChunkMapEntry nPlayerChunk = chunkMap.getEntry(pos.x + dir.getFrontOffsetX(), pos.z + dir.getFrontOffsetZ());
+
+                if (nPlayerChunk != null)
+                {
+                    for (final Entry<EntityPlayerMP, int[]> item : nPlayerChunk.lightTrackings.entrySet())
+                    {
+                        initPlayerLightTrackings(item);
+                        final int[] playerLightTrackings = item.getValue();
+
+                        copyLightTrackings(nChunk.lightTrackings, playerLightTrackings, oppDir);
+                    }
+                }
+
+                for (final Entry<EntityPlayerMP, int[]> item : playerChunk.neighborLightTrackings.entrySet())
+                {
+                    final int[] playerLightTrackings = item.getValue();
+
+                    if ((playerLightTrackings[NEIGHBOR_FLAG_COUNT] & (1 << oppDir.getHorizontalIndex())) != 0)
+                        copyLightTrackings(nChunk.lightTrackings, playerLightTrackings, oppDir);
+                }
+
+                clearLightTrackings(nChunk.lightTrackings, oppDir);
+            }
+        }
+        else if (chunk != null && chunk.neighborLightTrackings != null && !isLightTrackingsEmpty(chunk.neighborLightTrackings, oppDir))
+        {
+            for (final Entry<EntityPlayerMP, int[]> item : playerChunk.neighborLightTrackings.entrySet())
+            {
+                final int[] playerLightTrackings = item.getValue();
+
+                copyLightTrackings(chunk.neighborLightTrackings, playerLightTrackings, oppDir);
+            }
+
+            clearLightTrackings(chunk.neighborLightTrackings, oppDir);
+        }
+    }
+
     public static void onLoad(final World world, final Chunk chunk)
     {
         final IChunkProvider provider = world.getChunkProvider();
@@ -181,21 +360,11 @@ public class LightTrackingHooks
         {
             final Chunk nChunk = provider.getLoadedChunk(chunk.x + dir.getFrontOffsetX(), chunk.z + dir.getFrontOffsetZ());
 
-            if (nChunk != null && nChunk.neighborLightChecks != null)
+            if (nChunk != null && nChunk.neighborLightTrackings != null && !isLightTrackingsEmpty(nChunk.neighborLightTrackings, dir))
             {
-                final int index = getHorizontalFlagIndex(dir);
-
-                for (int offset = -1; offset <= 1; ++offset)
-                {
-                    final int flags = nChunk.neighborLightTrackings[index + offset];
-
-                    if (flags != 0)
-                    {
-                        initLightTrackings(chunk);
-                        chunk.lightTrackings[index + offset] = nChunk.neighborLightTrackings[index + offset];
-                        nChunk.neighborLightTrackings[index + offset] = 0;
-                    }
-                }
+                initLightTrackings(chunk);
+                copyLightTrackings(nChunk.neighborLightTrackings, chunk.lightTrackings, dir);
+                clearLightTrackings(nChunk.neighborLightTrackings, dir);
             }
         }
     }
@@ -211,22 +380,71 @@ public class LightTrackingHooks
         {
             final Chunk nChunk = provider.getLoadedChunk(chunk.x + dir.getFrontOffsetX(), chunk.z + dir.getFrontOffsetZ());
 
-            if (nChunk != null)
+            if (nChunk != null && !isLightTrackingsEmpty(chunk.lightTrackings, dir))
             {
-                final int index = getHorizontalFlagIndex(dir);
-
-                for (int offset = -1; offset <= 1; ++offset)
-                {
-                    final int flags = chunk.lightTrackings[index + offset];
-
-                    if (flags != 0)
-                    {
-                        initNeighborLightTrackings(nChunk);
-                        nChunk.neighborLightTrackings[index + offset] = chunk.lightTrackings[index + offset];
-                    }
-                }
+                initNeighborLightTrackings(nChunk);
+                copyLightTrackings(chunk.lightTrackings, nChunk.neighborLightTrackings, dir);
             }
         }
+    }
+
+    public static boolean isLightTrackingsEmpty(final int[] lightTrackings)
+    {
+        for (final int tracking : lightTrackings)
+        {
+            if (tracking != 0)
+                return false;
+        }
+
+        return true;
+    }
+
+    public static boolean isLightTrackingsEmpty(final int[] lightTrackings, final EnumFacing dir)
+    {
+        final int index = getHorizontalFlagIndex(dir);
+
+        for (int offset = -1; offset <= 1; ++offset)
+        {
+            if (lightTrackings[index + offset] != 0)
+                return false;
+        }
+
+        return true;
+    }
+
+    public static void copyLightTrackings(final int[] src, final int[] dst, final EnumFacing dir)
+    {
+        final int index = getHorizontalFlagIndex(dir);
+
+        for (int offset = -1; offset <= 1; ++offset)
+            dst[index + offset] |= src[index + offset];
+    }
+
+    public static void clearLightTrackings(final int[] lightTrackings, final EnumFacing dir)
+    {
+        final int index = getHorizontalFlagIndex(dir);
+
+        for (int offset = -1; offset <= 1; ++offset)
+            lightTrackings[index + offset] = 0;
+    }
+
+    public static int[] initPlayerLightTrackings(final PlayerChunkMapEntry chunk, final EntityPlayerMP player)
+    {
+        int[] lightTrackings = chunk.lightTrackings.get(player);
+
+        if (lightTrackings == null)
+        {
+            lightTrackings = new int[FLAG_COUNT];
+            chunk.lightTrackings.put(player, lightTrackings);
+        }
+
+        return lightTrackings;
+    }
+
+    public static void initPlayerLightTrackings(final Entry<EntityPlayerMP, int[]> item)
+    {
+        if (item.getValue() == null)
+            item.setValue(new int[FLAG_COUNT]);
     }
 
     public static void initLightTrackings(final Chunk chunk)
